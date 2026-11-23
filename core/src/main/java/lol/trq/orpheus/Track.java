@@ -27,6 +27,8 @@ public final class Track {
     private Keys keys;
 
     /** Comparison forms of the text, computed on first use. */
+    private static final int MAX_ARTISTS = 64;
+
     private record Keys(String title, List<String> artists, String allArtists) {}
 
     /**
@@ -54,7 +56,11 @@ public final class Track {
         this.title = Text.clean(title);
         this.artists = artists == null
                 ? List.of()
-                : artists.stream().map(Text::clean).filter(a -> !a.isEmpty()).toList();
+                : artists.stream()
+                        .limit(MAX_ARTISTS)
+                        .map(Text::clean)
+                        .filter(a -> !a.isEmpty())
+                        .toList();
         this.artistLine = String.join(", ", this.artists);
         this.album = Text.clean(album);
         this.albumArtist = Text.clean(albumArtist);

@@ -532,4 +532,54 @@ class EngineTest {
                 0, List.of(session("b").can(Control.PLAY).build(), session("c").build()));
         assertEquals("b", engine.route(b, Control.PLAY).sessionId());
     }
+
+    @Test
+    void lyricsAreLookedUpAgainWhenTheDurationArrivesAfterTheTitle() {
+        Engine engine = engine(AppRules.all());
+        Track title = Track.of("Song", "Artist");
+        engine.sessions(
+                0, List.of(session("a").track(title.withDuration(200_000)).build()));
+        engine.lyricsFound(lyricRequests.get(0), someLyrics());
+        engine.sessions(
+                0, List.of(session("a").track(title.withDuration(200_900)).build()));
+        assertEquals(1, lyricRequests.size(), "a rounding difference is not a new length");
+
+        engine.sessions(
+                0, List.of(session("a").track(title.withDuration(90_000)).build()));
+        assertEquals(2, lyricRequests.size());
+        assertEquals(Lyrics.NONE, engine.snapshot().lyrics(), "lyrics matched with the wrong length must go");
+        engine.lyricsFound(lyricRequests.get(0), someLyrics());
+        assertEquals(Lyrics.NONE, engine.snapshot().lyrics(), "the answer to the first question is outdated");
+        engine.lyricsFound(lyricRequests.get(1), someLyrics());
+        assertEquals(1, engine.snapshot().lyrics().lines().size());
+
+        for (int i = 2; i < 50; i++) {
+            engine.sessions(
+                    0,
+                    List.of(session("a")
+                            .track(title.withDuration(90_000 + i * 10_000L))
+                            .build()));
+        }
+        assertTrue(lyricRequests.size() <= 4, "a stream that keeps growing must not search without end");
+    }
+
+    @Test
+    void aCoverTooLargeForTheCacheStaysAndABrokenOneIsTriedOnce() {
+        Engine engine = new Engine(List.of(os, service), AppRules.all(), Set.of(), host, () -> now, new CoverCache(0));
+        CoverData art = CoverData.of(new byte[] {1});
+        engine.sessions(0, List.of(session("a").cover(art).build()));
+        engine.coverDecoded(art.key(), new Cover(art.key(), 1, 1, new byte[4], 0, new int[0]));
+        engine.sessions(
+                0, List.of(session("a").cover(art).state(PlaybackState.PAUSED).build()));
+        assertEquals(art.key(), engine.snapshot().cover().key(), "a pause must not blank the cover");
+        assertEquals(1, coverRequests.size());
+
+        CoverData broken = CoverData.of(new byte[] {2});
+        engine.sessions(0, List.of(session("a").cover(broken).build()));
+        engine.coverDecoded(broken.key(), null);
+        engine.sessions(
+                0,
+                List.of(session("a").cover(broken).state(PlaybackState.PAUSED).build()));
+        assertEquals(2, coverRequests.size(), "a picture that cannot be decoded must not be decoded again");
+    }
 }

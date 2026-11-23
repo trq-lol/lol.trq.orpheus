@@ -6,8 +6,10 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
@@ -16,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -28,6 +31,8 @@ import java.util.stream.Stream;
  */
 public final class NativeFiles {
     private static final long STALE_MILLIS = 30L * 24 * 60 * 60 * 1000;
+
+    private static final Pattern OWN = Pattern.compile("[0-9a-f]{16}-.*|tmp-.*");
 
     private record Item(String sha256, String name) {}
 
@@ -176,7 +181,9 @@ public final class NativeFiles {
         long cutoff = System.currentTimeMillis() - STALE_MILLIS;
         try (Stream<Path> children = Files.list(root)) {
             for (Path child : children.toList()) {
-                if (!child.equals(keep) && Files.getLastModifiedTime(child).toMillis() < cutoff) {
+                if (!child.equals(keep)
+                        && OWN.matcher(child.getFileName().toString()).matches()
+                        && Files.getLastModifiedTime(child).toMillis() < cutoff) {
                     delete(child);
                 }
             }
@@ -186,7 +193,7 @@ public final class NativeFiles {
     }
 
     private static void delete(Path path) {
-        if (!Files.exists(path)) {
+        if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) || isReparsePoint(path)) {
             return;
         }
         try (Stream<Path> walk = Files.walk(path)) {
@@ -199,6 +206,16 @@ public final class NativeFiles {
             }
         } catch (IOException | RuntimeException e) {
             // nothing more to do
+        }
+    }
+
+    /** Links and Windows junctions are not followed: what they point to is not ours to delete. */
+    private static boolean isReparsePoint(Path path) {
+        try {
+            return Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS)
+                    .isOther();
+        } catch (IOException e) {
+            return true;
         }
     }
 

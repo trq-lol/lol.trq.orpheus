@@ -22,8 +22,12 @@ public final class LyricsMatcher {
      * @return a score; {@link #ACCEPT} or more means "show it"
      */
     public static double score(Track track, String title, List<String> artists, long durationMillis) {
-        String want = Text.title(track.title());
-        String have = Text.title(title);
+        return score(track, Text.title(track.title()), title, Text.title(title), artists, durationMillis);
+    }
+
+    /** The same with both title keys already worked out, for scoring many candidates. */
+    static double score(
+            Track track, String want, String title, String have, List<String> artists, long durationMillis) {
         if (want.isEmpty() || have.isEmpty()) {
             return 0;
         }

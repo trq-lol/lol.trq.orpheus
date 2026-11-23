@@ -66,6 +66,8 @@ public final class Engine {
     static final long STICKY_NANOS = 3_000_000_000L;
     static final long REANCHOR_MILLIS = 100;
     static final long SEEK_MILLIS = 1000;
+    private static final long DURATION_MILLIS = 2000;
+    private static final int MAX_LYRIC_LOOKUPS = 4;
     private static final int MAX_OFFSETS = 256;
 
     private record Entry(int source, SessionUpdate update, boolean visible, String key) {}
@@ -95,6 +97,9 @@ public final class Engine {
     private long rawMeasured;
     private CoverData wantedCover;
     private String requestedCover;
+    private String failedCover;
+    private long lyricsDuration;
+    private int lyricsLookups;
     private long lyricsGeneration;
     private List<SessionInfo> infos = List.of();
 
@@ -193,6 +198,7 @@ public final class Engine {
         }
         if (key.equals(requestedCover)) {
             requestedCover = null;
+            failedCover = cover == null ? key : null;
         }
         if (cover != null && key.equals(snapshot.playback().coverKey()) && snapshot.cover() == null) {
             publish(new Snapshot(snapshot.playback(), snapshot.lyrics(), cover));
@@ -293,6 +299,9 @@ public final class Engine {
 
         Entry chosen = select(entries, now);
         selected = chosen == null ? null : chosen.key();
+        if (chosen == null) {
+            wantedCover = null;
+        }
         Playback playback = chosen == null ? Playback.NONE : build(chosen, entries);
         apply(playback, chosen == null ? Track.NONE : chosen.update().track());
 
@@ -496,21 +505,41 @@ public final class Engine {
                         > SEEK_MILLIS;
         rawTrack = raw;
 
-        Lyrics lyrics = trackChanged ? Lyrics.NONE : snapshot.lyrics();
+        // players report the title and the duration separately: lyrics matched with the wrong duration are dropped
+        long duration = playback.track().durationMillis();
+        boolean lookAgain = !trackChanged
+                && duration > 0
+                && Math.abs(duration - lyricsDuration) > DURATION_MILLIS
+                && lyricsLookups < MAX_LYRIC_LOOKUPS;
+        Lyrics lyrics = trackChanged || lookAgain ? Lyrics.NONE : snapshot.lyrics();
+        boolean lyricsDropped = lookAgain && snapshot.lyrics() != Lyrics.NONE;
         Cover cover = playback.coverKey() == null ? null : covers.get(playback.coverKey());
+        if (cover == null && snapshot.cover() != null && snapshot.cover().key().equals(playback.coverKey())) {
+            cover = snapshot.cover();
+        }
         boolean coverArrived = cover != null && snapshot.cover() != cover;
         publish(new Snapshot(playback, lyrics, cover));
 
-        if (cover == null && wantedCover != null && !wantedCover.key().equals(requestedCover)) {
+        if (cover == null
+                && wantedCover != null
+                && !wantedCover.key().equals(requestedCover)
+                && !wantedCover.key().equals(failedCover)) {
             requestedCover = wantedCover.key();
             host.decodeCover(wantedCover);
         }
-        if (trackChanged) {
+        if (trackChanged || lookAgain) {
             lyricsGeneration++;
+            lyricsDuration = duration;
+            lyricsLookups = trackChanged ? 1 : lyricsLookups + 1;
             if (playback.isPresent() && !playback.track().isEmpty()) {
                 host.findLyrics(lyricsGeneration, playback.track());
             }
+        }
+        if (trackChanged) {
             host.emit(new TrackChanged(snapshot));
+        }
+        if (lyricsDropped) {
+            host.emit(new LyricsChanged(snapshot));
         }
         if (stateChanged) {
             host.emit(new StateChanged(snapshot));

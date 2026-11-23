@@ -338,4 +338,42 @@ class OrpheusTest {
                 "a throwing source is a failure, not an exception");
         assertEquals(ControlStatus.FAILED, get(orpheus.queue().add("x")).status());
     }
+
+    @Test
+    void aNewRunWaitsForAStopThatIsStillWindingDown() throws Exception {
+        CountDownLatch closing = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        class SlowProvider implements lol.trq.orpheus.lyrics.LyricsProvider, AutoCloseable {
+            @Override
+            public lol.trq.orpheus.lyrics.LyricsMatch find(Track track) {
+                return null;
+            }
+
+            @Override
+            public void close() {
+                closing.countDown();
+                try {
+                    release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        PushSource push = PushSource.create("mine");
+        orpheus = Orpheus.builder().source(push).lyrics(new SlowProvider()).build();
+        orpheus.start();
+        Thread stopper = new Thread(orpheus::stop);
+        stopper.start();
+        await(closing);
+        orpheus.start();
+        CountDownLatch shown = when(
+                orpheus,
+                e -> e instanceof PlaybackChanged
+                        && e.snapshot().playback().track().title().equals("Later"));
+        push.publish(PlaybackUpdate.playing(Track.of("Later", "Me")));
+        release.countDown();
+        await(shown);
+        stopper.join(10_000);
+        assertEquals("Later", orpheus.playback().track().title(), "the old stop must not blank the new run");
+    }
 }

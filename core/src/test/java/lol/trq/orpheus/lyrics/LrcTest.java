@@ -165,4 +165,17 @@ class LrcTest {
                                 .length()
                         + 10);
     }
+
+    @Test
+    void manyStampsOnTheSameTimeStayBounded() {
+        String line = "[0:0.0]".repeat(70) + "x".repeat(500) + "\n";
+        Lrc lrc = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                java.time.Duration.ofSeconds(10), () -> Lrc.parse(line.repeat(2000)));
+        for (LyricLine each : lrc.lyrics().lines()) {
+            org.junit.jupiter.api.Assertions.assertTrue(each.translation().length() < 10_000);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(
+                Lyrics.Kind.NONE,
+                Lrc.parse("[0:1.0]a\n".repeat(400_000)).lyrics().kind());
+    }
 }

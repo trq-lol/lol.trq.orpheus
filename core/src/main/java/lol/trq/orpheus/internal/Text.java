@@ -15,7 +15,7 @@ public final class Text {
     private static final String VERSIONS = "live|remix|acoustic|instrumental|demo|karaoke|cover";
     private static final String NOISE = "feat|ft|featuring|with|remaster|remastered|version|edit|mix|mono|stereo|deluxe"
             + "|bonus|explicit|clean|single|album|original|radio|from|prod|" + VERSIONS;
-    private static final Pattern BRACKETED = Pattern.compile("[(\\[{][^)\\]}]*\\b(?:" + NOISE + ")\\b[^)\\]}]*[)\\]}]");
+    private static final Pattern NOISE_WORD = Pattern.compile("\\b(?:" + NOISE + ")\\b");
     private static final Pattern DASH_SUFFIX =
             Pattern.compile("\\s+[-\u2013\u2014]\\s+[^-\u2013\u2014]*\\b(?:" + NOISE + ")\\b.*$");
     private static final Pattern FEATURING = Pattern.compile("\\s+(?:feat|ft|featuring)\\b\\.?\\s.*$");
@@ -50,7 +50,7 @@ public final class Text {
     /** A comparison key for a title: case, width, punctuation and "feat"/"remaster" decorations removed. */
     public static String title(String value) {
         String text = fold(value);
-        text = BRACKETED.matcher(text).replaceAll(" ");
+        text = withoutNoiseBrackets(text);
         text = DASH_SUFFIX.matcher(text).replaceAll("");
         text = FEATURING.matcher(text).replaceAll("");
         String key = squash(text);
@@ -103,9 +103,42 @@ public final class Text {
         return squash(fold(String.join(" ", a))).equals(squash(fold(String.join(" ", b))));
     }
 
+    /** Replaces bracketed parts that hold a decoration word with a space, in time linear in the text. */
+    private static String withoutNoiseBrackets(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        Matcher noise = NOISE_WORD.matcher(text);
+        int pos = 0;
+        while (pos < text.length()) {
+            int close = pos;
+            while (close < text.length() && ")]}".indexOf(text.charAt(close)) < 0) {
+                close++;
+            }
+            if (close == text.length()) {
+                break;
+            }
+            int lastNoise = -1;
+            noise.region(pos, close).useTransparentBounds(true);
+            while (noise.find()) {
+                lastNoise = noise.start();
+            }
+            int open = pos;
+            while (open < lastNoise && "([{".indexOf(text.charAt(open)) < 0) {
+                open++;
+            }
+            if (open < lastNoise) {
+                out.append(text, pos, open).append(' ');
+            } else {
+                out.append(text, pos, close + 1);
+            }
+            pos = close + 1;
+        }
+        return out.append(text, pos, text.length()).toString();
+    }
+
     private static String fold(String value) {
-        return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
-                .toLowerCase(Locale.ROOT);
+        String text = value == null ? "" : value.length() > MAX_LENGTH ? value.substring(0, MAX_LENGTH) : value;
+        String folded = Normalizer.normalize(text, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);
+        return folded.length() > MAX_LENGTH ? folded.substring(0, MAX_LENGTH) : folded;
     }
 
     private static String squash(String text) {

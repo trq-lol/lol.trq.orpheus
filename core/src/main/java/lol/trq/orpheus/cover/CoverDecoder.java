@@ -39,7 +39,11 @@ public final class CoverDecoder {
 
     private static BufferedImage read(byte[] data, int maxSide) throws Exception {
         try (ImageInputStream in = new MemoryCacheImageInputStream(new ByteArrayInputStream(data))) {
-            Iterator<ImageReader> readers = ImageIO.getImageReaders(in);
+            String format = format(data);
+            if (format == null) {
+                return null;
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName(format);
             if (!readers.hasNext()) {
                 return null;
             }
@@ -59,6 +63,23 @@ public final class CoverDecoder {
                 reader.dispose();
             }
         }
+    }
+
+    /** The format the data starts like, or null. Other formats a host has readers for are not decoded. */
+    public static String format(byte[] d) {
+        if (d.length < 8) {
+            return null;
+        }
+        if ((d[0] & 0xFF) == 0x89 && d[1] == 'P' && d[2] == 'N' && d[3] == 'G') {
+            return "png";
+        }
+        if ((d[0] & 0xFF) == 0xFF && (d[1] & 0xFF) == 0xD8 && (d[2] & 0xFF) == 0xFF) {
+            return "jpeg";
+        }
+        if (d[0] == 'G' && d[1] == 'I' && d[2] == 'F' && d[3] == '8') {
+            return "gif";
+        }
+        return d[0] == 'B' && d[1] == 'M' ? "bmp" : null;
     }
 
     private static BufferedImage fit(BufferedImage image, int maxSide) {

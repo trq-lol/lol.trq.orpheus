@@ -101,9 +101,9 @@ public final class Orpheus implements AutoCloseable {
     public void start() {
         synchronized (lifecycle) {
             if (run == null) {
-                Run next = new Run();
-                run = next;
                 Run previous = last;
+                Run next = new Run(previous == null ? CompletableFuture.completedFuture(null) : previous.finished);
+                run = next;
                 if (previous != null && !previous.finished.isDone()) {
                     // a stop asked for from a library thread is still winding down: start once it is done
                     previous.finished.whenComplete((done, error) -> next.begin());
@@ -129,10 +129,18 @@ public final class Orpheus implements AutoCloseable {
         }
         if (ending != null) {
             ending.end();
-            snapshot = Snapshot.NONE;
-            sessions = List.of();
-            sourceInfos = List.of();
+            synchronized (lifecycle) {
+                if (run == null) {
+                    clear();
+                }
+            }
         }
+    }
+
+    private void clear() {
+        snapshot = Snapshot.NONE;
+        sessions = List.of();
+        sourceInfos = List.of();
     }
 
     @Override
@@ -239,13 +247,15 @@ public final class Orpheus implements AutoCloseable {
 
     /** Opts a source in or out of {@link Playback#shareable()}. Off for every source until set. */
     public void shareable(String sourceId, boolean share) {
-        Set<String> next = new HashSet<>(shareable);
-        if (share) {
-            next.add(sourceId);
-        } else {
-            next.remove(sourceId);
+        synchronized (lifecycle) {
+            Set<String> next = new HashSet<>(shareable);
+            if (share) {
+                next.add(sourceId);
+            } else {
+                next.remove(sourceId);
+            }
+            shareable = Set.copyOf(next);
         }
-        shareable = Set.copyOf(next);
         onHub(r -> r.engine.shareable(shareable));
     }
 
@@ -315,7 +325,16 @@ public final class Orpheus implements AutoCloseable {
         final List<Runnable> failPending = new CopyOnWriteArrayList<>();
         final Engine engine = new Engine(sources, rules, shareable, this, System::nanoTime, covers);
         final CompletableFuture<Void> finished = new CompletableFuture<>();
+        final CompletableFuture<Void> sourcesStopped = new CompletableFuture<>();
+        final CompletableFuture<Void> previous;
         volatile boolean ended;
+        private boolean begun;
+        private ScheduledFuture<?> wake;
+        private long wakeNanos;
+
+        Run(CompletableFuture<Void> previous) {
+            this.previous = previous;
+        }
 
         ThreadFactory factory(String name) {
             return task -> {
@@ -344,6 +363,12 @@ public final class Orpheus implements AutoCloseable {
         void begin() {
             hub.setRemoveOnCancelPolicy(true);
             submit(hub, () -> {
+                if (ended) {
+                    return;
+                }
+                begun = true;
+                engine.rules(rules);
+                engine.shareable(shareable);
                 engine.pin(pinSource, pinApp);
                 for (int i = 0; i < sources.size(); i++) {
                     int index = i;
@@ -371,7 +396,10 @@ public final class Orpheus implements AutoCloseable {
             ended = true;
             Runnable shutdown = () -> {
                 try {
-                    for (Source source : sources) {
+                    if (wake != null) {
+                        wake.cancel(false);
+                    }
+                    for (Source source : begun ? sources : List.<Source>of()) {
                         try {
                             source.stop();
                         } catch (RuntimeException | LinkageError e) {
@@ -382,7 +410,7 @@ public final class Orpheus implements AutoCloseable {
                         fail.run();
                     }
                 } finally {
-                    finished.complete(null);
+                    sourcesStopped.complete(null);
                 }
             };
             boolean inside = threads.contains(Thread.currentThread());
@@ -395,7 +423,7 @@ public final class Orpheus implements AutoCloseable {
                         done.get(10, TimeUnit.SECONDS);
                     }
                 } catch (RejectedExecutionException e) {
-                    finished.complete(null);
+                    sourcesStopped.complete(null);
                 } catch (Exception e) {
                     debug("stop did not finish cleanly: " + e);
                 }
@@ -429,6 +457,11 @@ public final class Orpheus implements AutoCloseable {
                     Thread.currentThread().interrupt();
                 }
             }
+            // a later run may begin only now, so nothing of this one can overwrite or close what it uses
+            CompletableFuture.allOf(sourcesStopped, previous).whenComplete((done, error) -> {
+                clear();
+                finished.complete(null);
+            });
         }
 
         void dispatch(Playback bound, ControlRequest request, CompletableFuture<ControlResult> result) {
@@ -591,9 +624,20 @@ public final class Orpheus implements AutoCloseable {
 
         @Override
         public void wakeAt(long nanos) {
+            if (ended) {
+                return;
+            }
+            if (wake != null) {
+                if (wakeNanos - nanos <= 0) {
+                    return;
+                }
+                wake.cancel(false);
+            }
+            wakeNanos = nanos;
             try {
-                hub.schedule(
+                wake = hub.schedule(
                         () -> {
+                            wake = null;
                             try {
                                 engine.refresh();
                             } catch (RuntimeException e) {

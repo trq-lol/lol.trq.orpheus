@@ -38,4 +38,22 @@ class TrackTest {
         assertEquals(List.of("ok"), track.artists());
         assertEquals("ok", track.artistLine());
     }
+
+    @Test
+    void bracketedDecorationsAreDroppedAndHostileTitlesStayCheap() {
+        assertEquals("song", lol.trq.orpheus.internal.Text.title("Song (feat. Someone) [Remastered 2011]"));
+        assertEquals("song part one", lol.trq.orpheus.internal.Text.title("Song (Part One)"));
+        assertEquals("song", lol.trq.orpheus.internal.Text.title("Song ((Live)"));
+        assertEquals("a b live", lol.trq.orpheus.internal.Text.title("a) b (live"));
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(5), () -> {
+            for (int i = 0; i < 200; i++) {
+                lol.trq.orpheus.internal.Text.title("(live ".repeat(100_000));
+            }
+        });
+        assertEquals(
+                64,
+                new Track(null, "t", java.util.Collections.nCopies(5000, "A"), "", "", 1, 0, null, MediaKind.UNKNOWN)
+                        .artists()
+                        .size());
+    }
 }

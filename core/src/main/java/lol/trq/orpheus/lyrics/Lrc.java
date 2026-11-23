@@ -20,6 +20,7 @@ public record Lrc(String title, String artist, String album, long lengthMillis, 
     public static final int MAX_BYTES = 2 << 20;
     public static final int MAX_LINES = 10_000;
     private static final int MAX_LINE_LENGTH = 1024;
+    private static final int MAX_TRANSLATION_LENGTH = 4096;
 
     private record Raw(long start, int order, String text, List<LyricWord> words) {}
 
@@ -43,6 +44,9 @@ public record Lrc(String title, String artist, String album, long lengthMillis, 
     }
 
     public static Lrc parse(String text) {
+        if (text.length() > MAX_BYTES) {
+            return parse("");
+        }
         String title = "";
         String artist = "";
         String album = "";
@@ -52,7 +56,7 @@ public record Lrc(String title, String artist, String album, long lengthMillis, 
         List<String> plain = new ArrayList<>();
         int count = 0;
         for (String rawLine : text.split("\n", -1)) {
-            if (++count > MAX_LINES) {
+            if (++count > MAX_LINES || timed.size() >= MAX_LINES) {
                 break;
             }
             String line = rawLine.strip();
@@ -104,7 +108,7 @@ public record Lrc(String title, String artist, String album, long lengthMillis, 
             }
             List<LyricWord> words = new ArrayList<>();
             String shown = words(rest, stamps.get(0), words);
-            for (int i = 0; i < stamps.size(); i++) {
+            for (int i = 0; i < stamps.size() && timed.size() < MAX_LINES; i++) {
                 timed.add(new Raw(stamps.get(i), timed.size(), shown, i == 0 ? words : List.of()));
             }
         }
@@ -130,8 +134,8 @@ public record Lrc(String title, String artist, String album, long lengthMillis, 
             if (last >= 0
                     && merged.get(last).start == raw.start
                     && !merged.get(last).text.isEmpty()) {
-                if (!raw.text.isEmpty()) {
-                    String sofar = translations.get(last);
+                String sofar = translations.get(last);
+                if (!raw.text.isEmpty() && sofar.length() < MAX_TRANSLATION_LENGTH) {
                     translations.set(last, sofar.isEmpty() ? raw.text : sofar + "\n" + raw.text);
                 }
             } else {

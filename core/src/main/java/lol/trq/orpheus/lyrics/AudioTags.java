@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import lol.trq.orpheus.internal.Text;
 
 /**
  * The few tags lyric matching needs, read straight from an audio file: ID3v2 (MP3), Vorbis comments (FLAC) and MP4
@@ -25,7 +26,13 @@ public record AudioTags(String title, String artist, long durationMillis, Lyrics
     public static final AudioTags NONE = new AudioTags("", "", -1, Lyrics.NONE);
 
     private static final int MAX_TAG_BYTES = 16 << 20;
+    private static final int READ_BYTES = 64 << 10;
     private static final int MAX_TEXT_BYTES = Lrc.MAX_BYTES;
+
+    public AudioTags {
+        title = Text.clean(title);
+        artist = Text.clean(artist);
+    }
 
     public static AudioTags read(Path file) {
         try (SeekableByteChannel channel = Files.newByteChannel(file)) {
@@ -59,8 +66,13 @@ public record AudioTags(String title, String artist, long durationMillis, Lyrics
         }
         ByteBuffer buffer = ByteBuffer.allocate((int) Math.min(length, channel.size() - position));
         channel.position(position);
-        while (buffer.hasRemaining() && channel.read(buffer) >= 0) {
-            // keep reading
+        // small steps: the runtime keeps a native buffer as large as the largest read for as long as the thread lives
+        int end = buffer.limit();
+        while (buffer.position() < end) {
+            buffer.limit(Math.min(end, buffer.position() + READ_BYTES));
+            if (channel.read(buffer) < 0) {
+                break;
+            }
         }
         return buffer.array();
     }
@@ -234,7 +246,7 @@ public record AudioTags(String title, String artist, long durationMillis, Lyrics
             if (next + 4 > end) {
                 break;
             }
-            texts.add(string(data, pos, next, encoding).replace("\n", " ").strip());
+            texts.add(Text.clean(string(data, pos, next, encoding)));
             times.add(new long[] {be32(data, next) & 0xFFFFFFFFL});
             pos = next + 4;
         }
@@ -295,7 +307,12 @@ public record AudioTags(String title, String artist, long durationMillis, Lyrics
                         String value = entry.substring(eq + 1);
                         switch (entry.substring(0, eq).toUpperCase(Locale.ROOT)) {
                             case "TITLE" -> title = value.strip();
-                            case "ARTIST" -> artist = artist.isEmpty() ? value.strip() : artist + ", " + value.strip();
+                            case "ARTIST" -> {
+                                if (artist.length() < Text.MAX_LENGTH) {
+                                    String name = Text.clean(value);
+                                    artist = artist.isEmpty() ? name : artist + ", " + name;
+                                }
+                            }
                             case "LYRICS", "UNSYNCEDLYRICS", "SYNCEDLYRICS" -> found = better(found, lyrics(value));
                             default -> {}
                         }

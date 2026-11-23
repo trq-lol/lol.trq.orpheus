@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
 import lol.trq.orpheus.Track;
+import lol.trq.orpheus.internal.Text;
 
 /**
  * Lyrics from the user's own files: {@code .lrc} files and lyrics embedded in MP3, FLAC and MP4 audio files under
@@ -29,7 +30,12 @@ public final class LocalLyrics implements LyricsProvider, AutoCloseable {
     private static final int MAX_DEPTH = 16;
     private static final Pattern TRACK_NUMBER = Pattern.compile("^\\d{1,3}[\\s._-]+");
 
-    private record Entry(Path path, boolean audio, String title, List<String> artists, long durationMillis) {}
+    private record Entry(
+            Path path, boolean audio, String title, String key, List<String> artists, long durationMillis) {
+        Entry(Path path, boolean audio, String title, List<String> artists, long durationMillis) {
+            this(path, audio, Text.clean(title), Text.title(title), artists, durationMillis);
+        }
+    }
 
     private final List<Path> roots;
     private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
@@ -66,10 +72,12 @@ public final class LocalLyrics implements LyricsProvider, AutoCloseable {
             }
             snapshot = entries;
         }
+        String want = Text.title(track.title());
         Entry best = null;
         double bestScore = 0;
         for (Entry entry : snapshot) {
-            double score = LyricsMatcher.score(track, entry.title, entry.artists, entry.durationMillis);
+            double score =
+                    LyricsMatcher.score(track, want, entry.title, entry.key, entry.artists, entry.durationMillis);
             if (score > bestScore || (score == bestScore && best != null && best.audio && !entry.audio)) {
                 best = entry;
                 bestScore = score;
