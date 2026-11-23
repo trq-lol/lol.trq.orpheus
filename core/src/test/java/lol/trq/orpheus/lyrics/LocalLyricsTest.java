@@ -111,7 +111,8 @@ class LocalLyricsTest {
         java.util.concurrent.CountDownLatch indexed = new java.util.concurrent.CountDownLatch(2);
         lyrics.onChange(indexed::countDown);
         lyrics.find(track("B", "A", -1));
-        indexed.await(10, java.util.concurrent.TimeUnit.SECONDS);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                indexed.await(10, java.util.concurrent.TimeUnit.SECONDS), "the provider never reported back");
         assertNotNull(lyrics.find(track("B", "A", -1)));
         lyrics.close();
         assertEquals(

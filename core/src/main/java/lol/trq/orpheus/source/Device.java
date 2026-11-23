@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 package lol.trq.orpheus.source;
 
+import lol.trq.orpheus.Experimental;
+
 /**
  * An output a source can play on.
  *
@@ -9,4 +11,5 @@ package lol.trq.orpheus.source;
  * @param type a free-form kind such as "computer" or "speaker"; may be empty
  * @param active whether playback is on this device
  */
+@Experimental
 public record Device(String id, String name, String type, boolean active) {}

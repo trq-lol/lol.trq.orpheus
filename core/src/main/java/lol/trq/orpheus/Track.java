@@ -50,7 +50,7 @@ public final class Track {
             int trackNumber,
             String uri,
             MediaKind kind) {
-        this.id = id == null || id.isEmpty() ? null : id;
+        this.id = optional(id);
         this.title = Text.clean(title);
         this.artists = artists == null
                 ? List.of()
@@ -60,8 +60,13 @@ public final class Track {
         this.albumArtist = Text.clean(albumArtist);
         this.durationMillis = durationMillis <= 0 ? -1 : durationMillis;
         this.trackNumber = Math.max(trackNumber, 0);
-        this.uri = uri == null || uri.isEmpty() ? null : uri;
+        this.uri = optional(uri);
         this.kind = kind == null ? MediaKind.UNKNOWN : kind;
+    }
+
+    /** Identifiers and locations longer than any real one are dropped rather than cut. */
+    private static String optional(String value) {
+        return value == null || value.isEmpty() || value.length() > 4 * Text.MAX_LENGTH ? null : value;
     }
 
     public static Track of(String title, String artist) {

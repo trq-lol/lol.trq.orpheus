@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import lol.trq.orpheus.Control;
 import lol.trq.orpheus.ControlResult;
 import lol.trq.orpheus.SourceApp;
@@ -20,7 +21,8 @@ public final class PushSource implements Source, Transport {
 
     private final String id;
     private final SourceApp app;
-    private final Map<Control, Consumer<ControlRequest>> handlers = new ConcurrentHashMap<>();
+    private final Map<Control, Function<ControlRequest, CompletableFuture<ControlResult>>> handlers =
+            new ConcurrentHashMap<>();
     private final Map<Class<?>, Object> capabilities = new ConcurrentHashMap<>();
     private final Object lock = new Object();
     private SourceSink sink;
@@ -60,10 +62,21 @@ public final class PushSource implements Source, Transport {
 
     /**
      * Registers what to do for a command. The handler runs on a library thread and must return quickly; throwing
-     * reports the command as failed. Registered controls are advertised with the next {@link #publish}.
+     * reports the command as failed. The control is advertised at once.
      */
     public PushSource handler(Control control, Consumer<ControlRequest> handler) {
-        handlers.put(control, handler);
+        return responder(control, request -> {
+            handler.accept(request);
+            return CompletableFuture.completedFuture(ControlResult.DONE);
+        });
+    }
+
+    /**
+     * Like {@link #handler}, for a player that can refuse a command or answers later: the function returns the
+     * outcome, now or when it is known.
+     */
+    public PushSource responder(Control control, Function<ControlRequest, CompletableFuture<ControlResult>> responder) {
+        handlers.put(control, responder);
         synchronized (lock) {
             report();
         }
@@ -103,13 +116,13 @@ public final class PushSource implements Source, Transport {
 
     @Override
     public CompletableFuture<ControlResult> send(ControlRequest request) {
-        Consumer<ControlRequest> handler = handlers.get(request.control());
+        Function<ControlRequest, CompletableFuture<ControlResult>> handler = handlers.get(request.control());
         if (handler == null) {
             return CompletableFuture.completedFuture(ControlResult.unsupported("no handler for " + request.control()));
         }
         try {
-            handler.accept(request);
-            return CompletableFuture.completedFuture(ControlResult.DONE);
+            CompletableFuture<ControlResult> answer = handler.apply(request);
+            return answer != null ? answer : CompletableFuture.completedFuture(ControlResult.failed("no answer"));
         } catch (RuntimeException e) {
             return CompletableFuture.completedFuture(ControlResult.failed(String.valueOf(e.getMessage())));
         }

@@ -56,7 +56,9 @@ public final class LocalLyrics implements LyricsProvider, AutoCloseable {
     public LyricsMatch find(Track track) {
         List<Entry> snapshot;
         synchronized (lock) {
-            if (!started && !closed) {
+            if (!started) {
+                started = true;
+                closed = false;
                 indexer = new Thread(this::index, "orpheus-index");
                 indexer.setDaemon(true);
                 indexer.setPriority(Thread.MIN_PRIORITY);
@@ -108,6 +110,11 @@ public final class LocalLyrics implements LyricsProvider, AutoCloseable {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
+        }
+        synchronized (lock) {
+            // a later lookup indexes again, so the provider survives a stop and a new start
+            started = false;
+            indexer = null;
         }
     }
 

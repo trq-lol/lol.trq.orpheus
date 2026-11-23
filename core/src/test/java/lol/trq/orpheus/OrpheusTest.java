@@ -126,9 +126,11 @@ class OrpheusTest {
         source.report(session("s1").can(Control.PAUSE).build());
         await(again);
         CompletableFuture<ControlResult> inFlight = orpheus.controls().pause();
-        while (source.requests.size() < 2) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (source.requests.size() < 2 && System.nanoTime() < deadline) {
             Thread.onSpinWait();
         }
+        source.stopped = false;
         orpheus.stop();
         assertEquals(ControlStatus.FAILED, get(inFlight).status());
         assertTrue(source.stopped);
@@ -231,6 +233,53 @@ class OrpheusTest {
     }
 
     @Test
+    void stopAndStartAgainFromAListenerKeepsWorking() throws Exception {
+        PushSource push = PushSource.create("mine");
+        orpheus = Orpheus.builder().source(push).build();
+        CountDownLatch restarted = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean once = new java.util.concurrent.atomic.AtomicBoolean();
+        orpheus.listen(event -> {
+            if (event instanceof PlaybackChanged && once.compareAndSet(false, true)) {
+                orpheus.stop();
+                orpheus.start();
+                restarted.countDown();
+            }
+        });
+        orpheus.start();
+        push.publish(PlaybackUpdate.playing(Track.of("One", "Me")));
+        await(restarted);
+        CountDownLatch second = when(
+                orpheus,
+                e -> e instanceof PlaybackChanged
+                        && e.snapshot().playback().track().title().equals("Two"));
+        get(orpheus.controls().pause());
+        push.publish(PlaybackUpdate.playing(Track.of("Two", "Me")));
+        await(second);
+        assertEquals("Two", orpheus.playback().track().title(), "the restarted hub must be the one that is live");
+    }
+
+    @Test
+    void localLyricsStillWorkAfterAStopAndANewStart(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Files.writeString(dir.resolve("Me - One.lrc"), "[00:01.00]a line");
+        PushSource push = PushSource.create("mine");
+        orpheus = Orpheus.builder()
+                .source(push)
+                .lyrics(lol.trq.orpheus.lyrics.LocalLyrics.in(dir))
+                .build();
+        push.publish(PlaybackUpdate.playing(Track.of("One", "Me")));
+        for (int round = 0; round < 2; round++) {
+            CountDownLatch found = when(
+                    orpheus,
+                    e -> e instanceof lol.trq.orpheus.event.LyricsChanged
+                            && e.snapshot().lyrics().size() == 1);
+            orpheus.start();
+            await(found);
+            orpheus.stop();
+        }
+    }
+
+    @Test
     void pushHandlersAdvertiseControlsAndReportFailures() throws Exception {
         PushSource push = PushSource.create("mine");
         List<Long> seeks = new CopyOnWriteArrayList<>();
@@ -251,6 +300,13 @@ class OrpheusTest {
         assertEquals("end of queue", next.reason());
         assertEquals(ControlStatus.UNSUPPORTED, get(orpheus.controls().stop()).status());
         assertEquals(ControlStatus.UNSUPPORTED, get(orpheus.queue().remove("x")).status());
+        CountDownLatch offered = when(orpheus, e -> e.snapshot().playback().can(Control.PREVIOUS));
+        push.responder(
+                Control.PREVIOUS, request -> CompletableFuture.completedFuture(ControlResult.refused("first track")));
+        await(offered);
+        ControlResult previous = get(orpheus.controls().previous());
+        assertEquals(ControlStatus.REFUSED, previous.status(), "a player must be able to say no");
+        assertEquals("first track", previous.reason());
 
         push.provide(QueueAccess.class, new QueueAccess() {
             @Override

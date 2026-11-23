@@ -15,18 +15,18 @@ class TrackTest {
 
     @Test
     void decorationsDoNotMakeADifferentSong() {
-        Track plain = track("Night Drive", 201_000, "The Examples");
-        assertTrue(plain.sameSong(track("Night Drive (feat. Someone) - Remastered 2011", 202_500, "Examples")));
-        assertTrue(plain.sameSong(track("NIGHT DRIVE", -1, "The Examples, Someone")));
-        assertTrue(plain.sameSong(track("Ｎｉｇｈｔ Drive", 201_000)));
+        Track plain = track("Example Song", 201_000, "The Examples");
+        assertTrue(plain.sameSong(track("Example Song (feat. Someone) - Remastered 2011", 202_500, "Examples")));
+        assertTrue(plain.sameSong(track("EXAMPLE SONG", -1, "The Examples, Someone")));
+        assertTrue(plain.sameSong(track("Ｅxample Song", 201_000)));
     }
 
     @Test
     void differentArtistLengthOrTitleIsADifferentSong() {
-        Track plain = track("Night Drive", 201_000, "The Examples");
-        assertFalse(plain.sameSong(track("Night Drive", 201_000, "Somebody Else")));
-        assertFalse(plain.sameSong(track("Night Drive", 260_000, "The Examples")));
-        assertFalse(plain.sameSong(track("Night Drives", 201_000, "The Examples")));
+        Track plain = track("Example Song", 201_000, "The Examples");
+        assertFalse(plain.sameSong(track("Example Song", 201_000, "Somebody Else")));
+        assertFalse(plain.sameSong(track("Example Song", 260_000, "The Examples")));
+        assertFalse(plain.sameSong(track("Example Songs", 201_000, "The Examples")));
         assertFalse(Track.NONE.sameSong(Track.NONE));
     }
 

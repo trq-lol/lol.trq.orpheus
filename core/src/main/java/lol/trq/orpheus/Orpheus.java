@@ -64,6 +64,7 @@ public final class Orpheus implements AutoCloseable {
     private volatile Snapshot snapshot = Snapshot.NONE;
     private volatile List<SessionInfo> sessions = List.of();
     private volatile Run run;
+    private Run last;
     private volatile AppRules rules;
     private volatile Set<String> shareable;
     private volatile String pinSource;
@@ -79,6 +80,9 @@ public final class Orpheus implements AutoCloseable {
         this.covers = new CoverCache(builder.coverCacheBytes);
         this.rules = builder.rules;
         this.shareable = Set.copyOf(builder.shareable);
+        for (LyricsProvider provider : providers) {
+            provider.onChange(() -> onHub(r -> r.engine.retryLyrics()));
+        }
         Set<String> ids = new HashSet<>();
         for (Source source : sources) {
             if (!ids.add(source.id())) {
@@ -97,7 +101,13 @@ public final class Orpheus implements AutoCloseable {
             if (run == null) {
                 Run next = new Run();
                 run = next;
-                next.begin();
+                Run previous = last;
+                if (previous != null && !previous.finished.isDone()) {
+                    // a stop asked for from a library thread is still winding down: start once it is done
+                    previous.finished.whenComplete((done, error) -> next.begin());
+                } else {
+                    next.begin();
+                }
             }
         }
     }
@@ -111,6 +121,9 @@ public final class Orpheus implements AutoCloseable {
         synchronized (lifecycle) {
             ending = run;
             run = null;
+            if (ending != null) {
+                last = ending;
+            }
         }
         if (ending != null) {
             ending.end();
@@ -210,7 +223,7 @@ public final class Orpheus implements AutoCloseable {
         onHub(r -> r.engine.shareable(shareable));
     }
 
-    /** Shifts the lyrics of the playing song; positive shows lines earlier. Remembered while this object lives. */
+    /** Shifts the lyrics of the playing song; positive shows lines earlier. Remembered per song until {@link #stop()}; does nothing while nothing plays. */
     public void lyricsOffset(Duration offset) {
         onHub(r -> r.engine.lyricsOffset(offset.toMillis()));
     }
@@ -275,6 +288,7 @@ public final class Orpheus implements AutoCloseable {
         final Set<CompletableFuture<?>> pending = ConcurrentHashMap.newKeySet();
         final List<Runnable> failPending = new CopyOnWriteArrayList<>();
         final Engine engine = new Engine(sources, rules, shareable, this, System::nanoTime, covers);
+        final CompletableFuture<Void> finished = new CompletableFuture<>();
         volatile boolean ended;
 
         ThreadFactory factory(String name) {
@@ -324,24 +338,25 @@ public final class Orpheus implements AutoCloseable {
                         engine.status(i, SourceStatus.unavailable(e.toString()));
                     }
                 }
-                for (LyricsProvider provider : providers) {
-                    provider.onChange(() -> submit(hub, engine::retryLyrics));
-                }
             });
         }
 
         void end() {
+            ended = true;
             Runnable shutdown = () -> {
-                ended = true;
-                for (Source source : sources) {
-                    try {
-                        source.stop();
-                    } catch (RuntimeException | LinkageError e) {
-                        debug("source " + source.id() + " failed to stop: " + e);
+                try {
+                    for (Source source : sources) {
+                        try {
+                            source.stop();
+                        } catch (RuntimeException | LinkageError e) {
+                            debug("source " + source.id() + " failed to stop: " + e);
+                        }
                     }
-                }
-                for (Runnable fail : failPending) {
-                    fail.run();
+                    for (Runnable fail : failPending) {
+                        fail.run();
+                    }
+                } finally {
+                    finished.complete(null);
                 }
             };
             boolean inside = threads.contains(Thread.currentThread());
@@ -353,6 +368,8 @@ public final class Orpheus implements AutoCloseable {
                     if (!inside) {
                         done.get(10, TimeUnit.SECONDS);
                     }
+                } catch (RejectedExecutionException e) {
+                    finished.complete(null);
                 } catch (Exception e) {
                     debug("stop did not finish cleanly: " + e);
                 }
@@ -444,8 +461,14 @@ public final class Orpheus implements AutoCloseable {
                 return;
             }
             Runnable fail = () -> result.complete(failed.apply("stopped"));
-            ScheduledFuture<?> timeout = hub.schedule(
-                    () -> result.complete(failed.apply("timed out")), commandTimeoutMillis, TimeUnit.MILLISECONDS);
+            ScheduledFuture<?> timeout;
+            try {
+                timeout = hub.schedule(
+                        () -> result.complete(failed.apply("timed out")), commandTimeoutMillis, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException e) {
+                result.complete(failed.apply("stopped"));
+                return;
+            }
             pending.add(result);
             failPending.add(fail);
             result.whenComplete((value, error) -> {
@@ -486,6 +509,9 @@ public final class Orpheus implements AutoCloseable {
             }
             try {
                 events.execute(() -> {
+                    if (ended) {
+                        return;
+                    }
                     for (Consumer<? super OrpheusEvent> listener : listeners) {
                         try {
                             listener.accept(event);

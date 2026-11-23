@@ -200,7 +200,7 @@ class EngineTest {
         engine.sessions(
                 0,
                 List.of(session("os1")
-                        .track("Night Drive", "The Examples")
+                        .track("Example Song", "The Examples")
                         .can(Control.PAUSE)
                         .build()));
         engine.sessions(
@@ -208,7 +208,7 @@ class EngineTest {
                 List.of(session("svc")
                         .track(new Track(
                                 "id-9",
-                                "Night Drive (Remastered)",
+                                "Example Song (Remastered)",
                                 List.of("Examples"),
                                 "Roads",
                                 "",
@@ -222,7 +222,7 @@ class EngineTest {
                         .build()));
         Playback p = engine.snapshot().playback();
         assertEquals("os", p.sourceId());
-        assertEquals("Night Drive", p.track().title(), "the primary keeps its own text");
+        assertEquals("Example Song", p.track().title(), "the primary keeps its own text");
         assertEquals("Roads", p.track().album());
         assertEquals(201_000, p.track().durationMillis());
         assertEquals(201_000, p.timeline().durationMillis());
@@ -237,7 +237,7 @@ class EngineTest {
     void differentSongsAreNeverMixed() {
         Engine engine = engine(AppRules.all());
         engine.sessions(
-                0, List.of(session("os1").track("Night Drive", "The Examples").build()));
+                0, List.of(session("os1").track("Example Song", "The Examples").build()));
         engine.sessions(
                 1,
                 List.of(session("svc")
@@ -255,7 +255,7 @@ class EngineTest {
         engine.sessions(
                 1,
                 List.of(session("svc")
-                        .track(new Track(null, "Night Drive", List.of("The Examples"), "Roads", "", -1, 0, null, null))
+                        .track(new Track(null, "Example Song", List.of("The Examples"), "Roads", "", -1, 0, null, null))
                         .build()));
         assertEquals("Roads", engine.snapshot().playback().track().album());
         engine.sessions(
@@ -395,6 +395,15 @@ class EngineTest {
         assertFalse(p.can(Control.SEEK));
         assertNull(engine.route(p, Control.SEEK));
         assertNotNull(engine.route(p, Control.PAUSE));
+    }
+
+    @Test
+    void toggleIsOfferedWheneverPlayOrPauseIs() {
+        Engine engine = engine(AppRules.all());
+        engine.sessions(0, List.of(session("a").can(Control.PAUSE).build()));
+        assertTrue(engine.snapshot().playback().can(Control.TOGGLE));
+        engine.sessions(0, List.of(session("a").can(Control.NEXT).build()));
+        assertFalse(engine.snapshot().playback().can(Control.TOGGLE));
     }
 
     @Test

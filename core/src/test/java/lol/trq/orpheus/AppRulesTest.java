@@ -38,6 +38,15 @@ class AppRulesTest {
     }
 
     @Test
+    void aRuleWithoutANameMatchesNothing() {
+        for (String empty : new String[] {"", " ", ".", "-_-"}) {
+            assertFalse(visible(AppRules.none().allow(empty), "chrome.exe", MediaKind.MUSIC), "allow '" + empty + "'");
+            assertTrue(visible(AppRules.all().deny(empty), "chrome.exe", MediaKind.MUSIC), "deny '" + empty + "'");
+            assertFalse(AppRules.matches(empty, "chrome.exe"));
+        }
+    }
+
+    @Test
     void denyBeatsAllowAndAll() {
         assertFalse(visible(AppRules.defaults().deny("spotify"), "Spotify.exe", MediaKind.MUSIC));
         assertFalse(visible(AppRules.all().deny("chrome"), "chrome.exe", MediaKind.MUSIC));

@@ -407,6 +407,13 @@ public final class Engine {
                 }
             }
         }
+        if (controls.contains(Control.PLAY) || controls.contains(Control.PAUSE)) {
+            // toggling works whenever either half does; the command is routed to that half
+            controls.add(Control.TOGGLE);
+        }
+        if (coverUri != null && coverUri.length() > 4 * Text.MAX_LENGTH) {
+            coverUri = null;
+        }
         wantedCover = cover;
         Playback before = snapshot.playback();
         boolean running = p.state() == PlaybackState.PLAYING;

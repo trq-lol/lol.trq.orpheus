@@ -2,6 +2,7 @@
 package lol.trq.orpheus.source;
 
 import lol.trq.orpheus.ControlResult;
+import lol.trq.orpheus.Experimental;
 
 /**
  * The answer to a question asked of a source.
@@ -10,6 +11,7 @@ import lol.trq.orpheus.ControlResult;
  * @param value the answer when {@code result} is done; otherwise an empty value, never null
  * @param <T> the answer type
  */
+@Experimental
 public record Reply<T>(ControlResult result, T value) {
     public static <T> Reply<T> of(T value) {
         return new Reply<>(ControlResult.DONE, value);
