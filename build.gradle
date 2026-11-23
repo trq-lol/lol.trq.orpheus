@@ -1,5 +1,7 @@
 plugins {
+    id 'java-base'
     id 'com.diffplug.spotless' version '8.11.0' apply false
+    id 'me.champeau.jmh' version '0.7.4' apply false
 }
 
 def published = ['core', 'linux', 'windows', 'macos', 'system']
@@ -42,6 +44,25 @@ subprojects {
         useJUnitPlatform()
     }
 
+    if (file('src/jmh').isDirectory()) {
+        apply plugin: 'me.champeau.jmh'
+        jmh {
+            jmhVersion = '1.37'
+            fork = 1
+            warmupIterations = 3
+            warmup = '1s'
+            iterations = 5
+            timeOnIteration = '1s'
+            profilers = ['gc']
+            failOnError = true
+            resultFormat = 'JSON'
+            jvmArgs = ['--enable-native-access=ALL-UNNAMED']
+            if (project.hasProperty('jmh.include')) {
+                includes = [project.property('jmh.include')]
+            }
+        }
+    }
+
     if (name in published) {
         apply plugin: 'maven-publish'
         base.archivesName = "orpheus-${project.name}"
@@ -77,4 +98,19 @@ subprojects {
             }
         }
     }
+}
+
+evaluationDependsOnChildren()
+
+// One Javadoc tree for every published module, for the site.
+tasks.register('javadocAll', Javadoc) {
+    def modules = published.collect { project(":${it}") }
+    source modules.collect { it.sourceSets.main.allJava }
+    classpath = files(modules.collect { it.sourceSets.main.compileClasspath })
+    destinationDir = layout.buildDirectory.dir('docs/javadoc').get().asFile
+    javadocTool = javaToolchains.javadocToolFor { languageVersion = JavaLanguageVersion.of(25) }
+    exclude 'lol/trq/orpheus/internal/**'
+    title = "lol.trq.orpheus ${version}"
+    options.addBooleanOption('Xdoclint:all,-missing', true)
+    options.quiet()
 }
