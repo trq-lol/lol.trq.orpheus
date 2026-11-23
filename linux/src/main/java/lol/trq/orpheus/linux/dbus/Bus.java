@@ -23,6 +23,9 @@ import java.util.function.Consumer;
  * and hands every other message to a listener. Small on purpose: only what talking to media players needs.
  */
 public final class Bus implements AutoCloseable {
+    /** The protocol's own limit on a message. Anything announcing more is a broken peer. */
+    private static final long MAX_SKIP_BYTES = 128L << 20;
+
     private final ByteChannel channel;
     private final Map<Long, CompletableFuture<Message>> pending = new ConcurrentHashMap<>();
     private final Object writeLock = new Object();
@@ -175,6 +178,12 @@ public final class Bus implements AutoCloseable {
         try {
             while (!closed) {
                 byte[] header = readFully(16);
+                long announced = Message.announced(header);
+                if (header[3] == 1 && announced + 16 > Message.MAX_BYTES && announced <= MAX_SKIP_BYTES) {
+                    // larger than this client reads, but legal: drop this one message, keep the connection
+                    skip(announced);
+                    continue;
+                }
                 byte[] rest = readFully(Message.remaining(header));
                 byte[] all = new byte[16 + rest.length];
                 System.arraycopy(header, 0, all, 0, 16);
@@ -205,6 +214,19 @@ public final class Bus implements AutoCloseable {
         shutdown();
         if (unexpected) {
             onClose.run();
+        }
+    }
+
+    private void skip(long length) throws IOException {
+        ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
+        for (long left = length; left > 0; ) {
+            buffer.clear();
+            buffer.limit((int) Math.min(buffer.capacity(), left));
+            int read = channel.read(buffer);
+            if (read < 0) {
+                throw new EOFException();
+            }
+            left -= read;
         }
     }
 

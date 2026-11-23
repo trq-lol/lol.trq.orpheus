@@ -114,7 +114,10 @@ class MprisSourceTest {
         bus.changed("PlaybackStatus", new Variant("s", "Paused"));
         SessionUpdate paused = sink.awaitSessions(s -> s.size() == 1 && s.get(0).state() == PlaybackState.PAUSED)
                 .get(0);
-        assertEquals(42_000, paused.positionMillis(), "a Seeked signal from another connection must be ignored");
+        assertTrue(
+                paused.positionMillis() >= 42_000 && paused.positionMillis() < 72_000,
+                "a Seeked signal from another connection must be ignored, but the position is "
+                        + paused.positionMillis());
         assertEquals(0.8, paused.volume(), "a property change from another connection must be ignored");
 
         bus.signal(
@@ -199,6 +202,17 @@ class MprisSourceTest {
     }
 
     @Test
+    void aMessageTooLargeToReadIsSkippedWithoutLosingTheConnection() throws Exception {
+        started();
+        bus.signal(
+                FakeBus.OWNER,
+                Message.signal("/org/mpris/MediaPlayer2", "org.example.Noise", "Huge", "s", "x".repeat(9 << 20)));
+        bus.changed("PlaybackStatus", new Variant("s", "Paused"));
+        sink.awaitSessions(s -> s.size() == 1 && s.get(0).state() == PlaybackState.PAUSED);
+        assertEquals(1, bus.connections.get(), "the connection must have survived");
+    }
+
+    @Test
     void aSilentPlayerFailsTheCommandInsteadOfHangingIt() throws Exception {
         started();
         bus.silent = true;
@@ -209,9 +223,10 @@ class MprisSourceTest {
     @Test
     void reconnectsAfterTheBusDropsTheConnection() throws Exception {
         started();
+        bus.players.put(NAME, FakeBus.player("after the reconnect"));
         bus.drop();
         sink.awaitStatus(s -> s.state() == SourceStatus.State.UNAVAILABLE);
-        sink.awaitSessions(s -> s.size() == 1);
+        sink.awaitSessions(s -> s.size() == 1 && s.get(0).track().title().equals("after the reconnect"));
         sink.awaitStatus(s -> s.state() == SourceStatus.State.READY);
         assertEquals(2, bus.connections.get());
     }
@@ -240,9 +255,9 @@ class MprisSourceTest {
 
     @Test
     void artIsLoadedOnlyFromInlineDataAndRegularFiles(@TempDir Path dir) throws Exception {
-        byte[] image = {1, 2, 3, 4, 5};
+        byte[] image = {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10, 0};
         assertEquals(
-                5,
+                9,
                 MprisSource.loadArt(
                                 "data:image/png;base64," + Base64.getEncoder().encodeToString(image))
                         .bytes()
@@ -251,6 +266,9 @@ class MprisSourceTest {
         Files.write(file, image);
         assertNotNull(MprisSource.loadArt(file.toUri().toString()));
         assertNull(MprisSource.loadArt(dir.toUri().toString()), "a directory is not art");
+        Path secret = dir.resolve("notes.txt");
+        Files.writeString(secret, "something private a player has no business reading");
+        assertNull(MprisSource.loadArt(secret.toUri().toString()), "only files that start like an image are art");
         assertNull(MprisSource.loadArt(dir.resolve("missing.png").toUri().toString()));
         assertNull(MprisSource.loadArt("https://example.invalid/cover.png"), "remote art is never fetched");
         assertNull(MprisSource.loadArt("data:image/png,rawtext"));

@@ -2,6 +2,7 @@
 package lol.trq.orpheus.linux;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -116,6 +117,7 @@ public final class MprisSource implements Source, Transport {
                 return;
             }
             sink = newSink;
+            publishQueued = false;
             ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, task -> {
                 Thread thread = new Thread(task, "orpheus-mpris");
                 thread.setDaemon(true);
@@ -181,15 +183,17 @@ public final class MprisSource implements Source, Transport {
         };
     }
 
-    private void run(Runnable task) {
+    private boolean run(Runnable task) {
         ScheduledExecutorService current = worker;
         if (current != null) {
             try {
                 current.execute(guarded(task));
+                return true;
             } catch (RejectedExecutionException e) {
                 // stopping
             }
         }
+        return false;
     }
 
     private void later(Runnable task, long millis) {
@@ -248,7 +252,11 @@ public final class MprisSource implements Source, Transport {
                     call(Message.call(DBUS, DBUS_PATH, DBUS, "AddMatch", "s", "type='signal',path='" + OBJECT + "'"));
                     call(Message.call(DBUS, DBUS_PATH, DBUS, "ListNames", ""))
                             .thenAccept(names -> run(() -> {
-                                if (current != bus || names == null || names.type() != Message.RETURN) {
+                                if (current != bus) {
+                                    return;
+                                }
+                                if (names == null || names.type() != Message.RETURN) {
+                                    lost(current);
                                     return;
                                 }
                                 backoff.reset();
@@ -584,16 +592,34 @@ public final class MprisSource implements Source, Transport {
             }
             if (url.startsWith("file:")) {
                 Path path = Path.of(URI.create(url));
-                if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
-                        || Files.size(path) > CoverDecoder.MAX_ENCODED_BYTES) {
+                if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
                     return null;
                 }
-                return CoverData.of(Files.readAllBytes(path));
+                // A player chooses this path, so it is treated as hostile: read a bounded amount whatever the
+                // file claims to be, and keep it only when it starts like an image.
+                byte[] data;
+                try (InputStream in = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) {
+                    data = in.readNBytes(CoverDecoder.MAX_ENCODED_BYTES + 1);
+                }
+                return data.length <= CoverDecoder.MAX_ENCODED_BYTES && looksLikeAnImage(data)
+                        ? CoverData.of(data)
+                        : null;
             }
         } catch (IOException | RuntimeException e) {
             // unreadable art is no art
         }
         return null;
+    }
+
+    private static boolean looksLikeAnImage(byte[] d) {
+        if (d.length < 8) {
+            return false;
+        }
+        boolean png = (d[0] & 0xFF) == 0x89 && d[1] == 'P' && d[2] == 'N' && d[3] == 'G';
+        boolean jpeg = (d[0] & 0xFF) == 0xFF && (d[1] & 0xFF) == 0xD8 && (d[2] & 0xFF) == 0xFF;
+        boolean gif = d[0] == 'G' && d[1] == 'I' && d[2] == 'F' && d[3] == '8';
+        boolean bmp = d[0] == 'B' && d[1] == 'M';
+        return png || jpeg || gif || bmp;
     }
 
     // ---- commands
@@ -605,7 +631,7 @@ public final class MprisSource implements Source, Transport {
             result.complete(ControlResult.failed("not started"));
             return result;
         }
-        run(() -> {
+        boolean queued = run(() -> {
             Player player = players.get(request.sessionId());
             if (player == null) {
                 result.complete(ControlResult.refused("the player left the bus"));
@@ -629,6 +655,9 @@ public final class MprisSource implements Source, Transport {
                 }
             });
         });
+        if (!queued) {
+            result.complete(ControlResult.failed("not started"));
+        }
         return result;
     }
 

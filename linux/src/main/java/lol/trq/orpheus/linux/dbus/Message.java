@@ -93,6 +93,12 @@ public record Message(
         }
     }
 
+    /** The number of bytes after the fixed header, whatever its size; for skipping a message that is too large. */
+    public static long announced(byte[] header) throws WireException {
+        java.nio.ByteBuffer h = java.nio.ByteBuffer.wrap(header).order(order(header));
+        return ((h.getInt(12) & 0xFFFFFFFFL) + 7) / 8 * 8 + (h.getInt(4) & 0xFFFFFFFFL);
+    }
+
     /** The number of bytes that follow the 16-byte fixed header. */
     public static int remaining(byte[] header) throws WireException {
         ByteOrder order = order(header);
