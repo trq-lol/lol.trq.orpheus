@@ -1,1 +1,52 @@
-dependencies { api project(':core') }
+// Windows: media sessions through a small Rust library bundled in the jar.
+//
+// The library is built by cargo when the build runs on Windows. Elsewhere, or with -Porpheus.natives=<dir> (a
+// directory holding windows-x64/orpheus.dll), a prebuilt copy is packaged instead. Without either the jar is built
+// with no native code and the source reports itself unavailable at run time.
+
+import java.security.MessageDigest
+
+dependencies {
+    api project(':core')
+}
+
+def abi = 1
+def nativeRoot = rootProject.layout.projectDirectory.dir('native')
+def prebuilt = providers.gradleProperty('orpheus.natives')
+def onWindows = System.getProperty('os.name').toLowerCase().contains('windows')
+def target = 'x86_64-pc-windows-msvc'
+
+def cargoBuild = tasks.register('cargoBuild', Exec) {
+    enabled = onWindows && !prebuilt.isPresent()
+    workingDir = nativeRoot.asFile
+    commandLine 'cargo', 'build', '--release', '--locked', '-p', 'orpheus-windows', '--target', target
+    inputs.dir(nativeRoot.dir('orpheus-windows'))
+    inputs.files(nativeRoot.file('Cargo.toml'), nativeRoot.file('Cargo.lock'))
+    outputs.file(nativeRoot.file("target/${target}/release/orpheus.dll"))
+}
+
+def nativeResources = tasks.register('nativeResources') {
+    dependsOn cargoBuild
+    def library = prebuilt.isPresent()
+            ? file("${prebuilt.get()}/windows-x64/orpheus.dll")
+            : nativeRoot.file("target/${target}/release/orpheus.dll").asFile
+    def output = layout.buildDirectory.dir('native-resources')
+    inputs.files(library).optional()
+    outputs.dir(output)
+    doLast {
+        def directory = output.get().dir("orpheus-native/${abi}/windows-x64").asFile
+        delete(output)
+        if (library.exists()) {
+            directory.mkdirs()
+            def copy = new File(directory, 'orpheus.dll')
+            copy.bytes = library.bytes
+            def digest = MessageDigest.getInstance('SHA-256').digest(copy.bytes).encodeHex().toString()
+            new File(directory, 'index').text = "${digest} orpheus.dll\n"
+        } else {
+            output.get().asFile.mkdirs()
+            logger.warn('orpheus-windows is being built without its native library')
+        }
+    }
+}
+
+sourceSets.main.resources.srcDir(nativeResources)
