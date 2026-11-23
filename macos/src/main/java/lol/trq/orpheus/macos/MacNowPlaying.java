@@ -59,6 +59,7 @@ public final class MacNowPlaying implements Source, Transport {
     private static final String FRAMEWORK = "MediaRemoteAdapter.framework";
     private static final int MAX_LINE_CHARS = 48 << 20;
     private static final int MAX_FAILURES = 5;
+    private static final int MAX_NAME_ATTEMPTS = 3;
     /** Key under which the process name is kept in the held state; never sent by the helper. */
     static final String PROCESS_NAME = "orpheus.processName";
 
@@ -75,6 +76,7 @@ public final class MacNowPlaying implements Source, Transport {
     private boolean stopping;
     private volatile String sessionId = "";
     private long namedPid;
+    private int nameAttempts;
     private String processName = "";
     private volatile List<String> prefix;
     long commandTimeoutMillis = 3000;
@@ -399,11 +401,19 @@ public final class MacNowPlaying implements Source, Transport {
     }
 
     private List<SessionUpdate> sessions(Map<String, Object> state, CoverCache cover) {
-        if (!state.isEmpty() && appOf(state).isEmpty()) {
+        if (state.isEmpty()) {
+            namedPid = 0;
+            processName = "";
+        } else if (appOf(state).isEmpty()) {
             long pid = micros(state.get("processIdentifier"));
             if (pid != namedPid) {
                 namedPid = pid;
-                processName = pid > 0 ? processName(pid) : "";
+                processName = "";
+                nameAttempts = 0;
+            }
+            if (processName.isEmpty() && pid > 0 && nameAttempts < MAX_NAME_ATTEMPTS) {
+                nameAttempts++;
+                processName = processName(pid);
             }
             if (processName.isEmpty()) {
                 state.remove(PROCESS_NAME);
@@ -503,12 +513,15 @@ public final class MacNowPlaying implements Source, Transport {
                     .redirectErrorStream(true)
                     .start();
             process.getOutputStream().close();
+            if (!process.waitFor(500, TimeUnit.MILLISECONDS) || process.exitValue() != 0) {
+                return "";
+            }
             String line;
             try (BufferedReader in =
                     new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 line = in.readLine();
             }
-            if (!process.waitFor(2, TimeUnit.SECONDS) || process.exitValue() != 0 || line == null) {
+            if (line == null) {
                 return "";
             }
             return nameOf(line);
