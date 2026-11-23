@@ -90,7 +90,21 @@ Pending: this section is filled in from `harness soak` runs.
 
 ## macOS
 
-Pending: this section is filled in from the macOS workflow run.
+Partly working: 10 of 14 live scenarios passed on a GitHub macOS 15.8.2 arm64 runner (Java 25, 2026-11-23, one run)
+with the test publisher. No real player was tried.
+
+| Scenario | Result |
+|---|---|
+| metadata, rapid changes, text, missing metadata, filtering, source switching, start/stop | pass |
+| track change latency | pass, median 10.5 ms, worst 29.7 ms |
+| cover | pass, 25.5 ms |
+| player crash | pass, noticed after 24.9 ms |
+| progress | FAIL: position 573 ms off while playing, target 100 ms; 1.0 ms off after a seek |
+| lyrics | FAIL: a line changed 566 ms off, target 50 ms |
+| controls | FAIL: a shuffle change was not reflected |
+| unsupported controls | FAIL: a withdrawn control stayed offered; the helper does not report control flags |
+
+The causes of the first three failures have not been investigated.
 
 ## Real players
 
