@@ -25,12 +25,14 @@ jobs:
         runner: ${{ fromJSON(inputs.intel && '["macos-15","macos-15-intel"]' || '["macos-15"]') }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       - name: Build the helper and the test publisher
         run: |
           sh native/macos/build-adapter.sh
@@ -50,13 +52,13 @@ jobs:
             echo "macOS built but NOT verified on ${{ matrix.runner }}: see the live-macos artifact" >> "$GITHUB_STEP_SUMMARY"
           fi
           cat live-macos.jsonl >> "$GITHUB_STEP_SUMMARY" || true
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: live-macos-${{ matrix.runner }}
           path: live-macos.jsonl
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: macos-universal-${{ matrix.runner }}
           path: native/dist/macos-universal

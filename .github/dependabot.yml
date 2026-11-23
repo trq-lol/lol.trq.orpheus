@@ -8,6 +8,9 @@ updates:
     directory: /native
     schedule:
       interval: weekly
+    ignore:
+      # must match the version the windows crate uses
+      - dependency-name: windows-future
   - package-ecosystem: github-actions
     directory: /
     schedule:

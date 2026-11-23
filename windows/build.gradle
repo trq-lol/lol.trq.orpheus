@@ -44,6 +44,9 @@ def nativeResources = tasks.register('nativeResources') {
             new File(directory, 'index').text = "${digest} orpheus.dll\n"
         } else {
             output.get().asFile.mkdirs()
+            if (project.hasProperty('orpheus.natives')) {
+                throw new GradleException('orpheus-windows is being built without its native library')
+            }
             logger.warn('orpheus-windows is being built without its native library')
         }
     }

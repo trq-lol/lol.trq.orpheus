@@ -75,6 +75,9 @@ subprojects {
             options.quiet()
         }
         jar {
+            from(rootProject.files('LICENSE', 'NOTICE.md')) {
+                into 'META-INF'
+            }
             manifest {
                 attributes 'Implementation-Title': "orpheus-${project.name}", 'Implementation-Version': project.version
             }
@@ -84,6 +87,20 @@ subprojects {
                 maven(MavenPublication) {
                     artifactId = "orpheus-${project.name}"
                     from components.java
+                    pom {
+                        name = "orpheus-${project.name}"
+                        description = 'Media sessions, controls and lyrics of the operating system for Java'
+                        url = 'https://github.com/trq-lol/lol.trq.orpheus'
+                        licenses {
+                            license {
+                                name = 'MIT'
+                                url = 'https://opensource.org/license/mit'
+                            }
+                        }
+                        scm {
+                            url = 'https://github.com/trq-lol/lol.trq.orpheus'
+                        }
+                    }
                 }
             }
             repositories {

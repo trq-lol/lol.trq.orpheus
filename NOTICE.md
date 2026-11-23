@@ -5,7 +5,8 @@ these licenses:
 
 ## mediaremote-adapter (in `orpheus-macos`)
 
-The macOS helper script and framework, built unmodified from https://github.com/ungive/mediaremote-adapter.
+The macOS helper script and framework, built from the unmodified source of
+https://github.com/ungive/mediaremote-adapter. The framework bundle is reduced to the files it needs and signed again.
 
 ```
 BSD 3-Clause License
@@ -44,7 +45,8 @@ The copy of this license that ships inside the jar is taken from the upstream re
 
 The Windows library links the `windows`, `windows-core`, `windows-future` and related crates
 (https://github.com/microsoft/windows-rs, Copyright (c) Microsoft Corporation) and `jni-sys`
-(https://github.com/jni-rs/jni-sys), all used under the MIT license:
+(https://github.com/jni-rs/jni-sys, Copyright (c) 2015 The rust-jni-sys Developers), and the Rust standard library
+(https://github.com/rust-lang/rust, Copyright (c) The Rust Project Contributors), all used under the MIT license:
 
 ```
 MIT License

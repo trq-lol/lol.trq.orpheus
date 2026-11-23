@@ -24,6 +24,9 @@ def nativeResources = tasks.register('nativeResources') {
         def directory = output.get().dir("orpheus-native/${abi}/macos-universal").asFile
         output.get().asFile.mkdirs()
         if (!source.isDirectory()) {
+            if (project.hasProperty('orpheus.natives')) {
+                throw new GradleException('orpheus-macos is being built without its helper')
+            }
             logger.warn('orpheus-macos is being built without its helper')
             return
         }
