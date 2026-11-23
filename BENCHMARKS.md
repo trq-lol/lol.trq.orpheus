@@ -132,7 +132,18 @@ with the test publisher. No real player was tried.
 | controls | FAIL: a shuffle change was not reflected |
 | unsupported controls | FAIL: a withdrawn control stayed offered; the helper does not report control flags |
 
-The causes of the first three failures have not been investigated.
+On a Mac with an M2 and macOS 26.5 (Java 25, 2026-11-23, commit 64168b3) the same 10 of 14 pass: progress 532 ms off while
+playing and 1.6 ms after a seek, lyric lines 524 ms off, track changes median 3.5 ms and worst 5.2 ms, cover 5.9 ms.
+
+- Progress and lyrics: in tests on that Mac, an update of the now playing data that followed the previous one within
+  0.5 s arrived 510 to 620 ms late. It carried the late delivery time as its timestamp and the position from before the
+  delay, so it could not be told from a correct one. At 0.8 s or more after the previous update there was no delay (at
+  most about 40 ms). The harness starts playback right after the track, so it meets this every time. The target is
+  kept and reported as missed. That the lyrics failure has the same cause is likely but was not measured.
+- The test publisher also resent an outdated position on every state change. That is corrected; with the correction the
+  result was still 10 of 14.
+- Shuffle: the helper stream never carried shuffle or repeat state, so both stay unknown. The commands themselves work.
+- Withdrawn controls: the stream sent nothing when the player disabled a control.
 
 ## Real players
 

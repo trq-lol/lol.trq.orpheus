@@ -23,12 +23,31 @@ static void say(NSString *line) {
 static NSMutableDictionary *info;
 static BOOL playing = NO;
 
+// The position at anchorTime, so that every update carries the real current position.
+static double anchorPosition = 0;
+static double anchorTime = 0;
+
+static double now(void) {
+    return [NSDate date].timeIntervalSince1970;
+}
+
+static double currentPosition(void) {
+    return anchorPosition + (playing ? now() - anchorTime : 0);
+}
+
+static void setPosition(double seconds) {
+    anchorPosition = seconds;
+    anchorTime = now();
+}
+
 static void publish(void) {
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(currentPosition());
     info[MPNowPlayingInfoPropertyPlaybackRate] = @(playing ? 1.0 : 0.0);
     [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = info;
 }
 
 static void setState(MPNowPlayingPlaybackState state) {
+    setPosition(currentPosition());
     playing = state == MPNowPlayingPlaybackStatePlaying;
     [MPNowPlayingInfoCenter defaultCenter].playbackState = state;
     publish();
@@ -66,7 +85,7 @@ static void handle(NSString *line) {
         if (millis > 0) {
             info[MPMediaItemPropertyPlaybackDuration] = @(millis / 1000.0);
         }
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @0.0;
+        setPosition(0);
         BOOL video = [field(7) isEqualToString:@"video"];
         info[MPNowPlayingInfoPropertyMediaType] = @(video ? MPNowPlayingInfoMediaTypeVideo : MPNowPlayingInfoMediaTypeAudio);
         if (field(6).length == 6) {
@@ -85,7 +104,7 @@ static void handle(NSString *line) {
                  : [state isEqualToString:@"paused"] ? MPNowPlayingPlaybackStatePaused
                                                      : MPNowPlayingPlaybackStateStopped);
     } else if ([verb isEqualToString:@"position"]) {
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(field(1).doubleValue / 1000.0);
+        setPosition(field(1).doubleValue / 1000.0);
         publish();
     } else if ([verb isEqualToString:@"controls"]) {
         BOOL all = [field(1) isEqualToString:@"on"];
@@ -131,7 +150,7 @@ int main(void) {
         }];
         [commands.changePlaybackPositionCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
             MPChangePlaybackPositionCommandEvent *seek = (MPChangePlaybackPositionCommandEvent *)event;
-            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(seek.positionTime);
+            setPosition(seek.positionTime);
             publish();
             say([NSString stringWithFormat:@"command seek %lld", (long long)llround(seek.positionTime * 1000.0)]);
             return MPRemoteCommandHandlerStatusSuccess;
