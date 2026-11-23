@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 
 [target.'cfg(windows)'.dependencies]
 jni-sys = "0.3.1"
-windows-future = "0.3.2"
+windows-future = "0.100.0"
 windows = { workspace = true, features = [
     "Foundation",
     "Foundation_Collections",
