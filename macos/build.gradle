@@ -1,1 +1,45 @@
-dependencies { api project(':core') }
+// macOS: Now Playing through a helper process (mediaremote-adapter, BSD-3-Clause). Experimental.
+//
+// The helper cannot be built off macOS. Build it there with native/macos/build-adapter.sh, which fills
+// native/dist/macos-universal, or point -Porpheus.natives=<dir> at a directory that holds macos-universal/. Without it
+// the jar carries no helper and the source reports itself unavailable unless the caller supplies one.
+
+import java.security.MessageDigest
+
+dependencies {
+    api project(':core')
+}
+
+def abi = 1
+def natives = providers.gradleProperty('orpheus.natives').orElse(rootProject.file('native/dist').path)
+
+def nativeResources = tasks.register('nativeResources') {
+    def source = new File(natives.get(), 'macos-universal')
+    def output = layout.buildDirectory.dir('native-resources')
+    inputs.files(fileTree(source))
+    inputs.property('present', source.isDirectory())
+    outputs.dir(output)
+    doLast {
+        delete(output)
+        def directory = output.get().dir("orpheus-native/${abi}/macos-universal").asFile
+        output.get().asFile.mkdirs()
+        if (!source.isDirectory()) {
+            logger.warn('orpheus-macos is being built without its helper')
+            return
+        }
+        def index = new StringBuilder()
+        source.eachFileRecurse { file ->
+            if (file.isFile()) {
+                def name = source.toPath().relativize(file.toPath()).join('/')
+                def copy = new File(directory, name)
+                copy.parentFile.mkdirs()
+                copy.bytes = file.bytes
+                def digest = MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString()
+                index.append(digest).append(' ').append(name).append(System.lineSeparator())
+            }
+        }
+        new File(directory, 'index').text = index.toString()
+    }
+}
+
+sourceSets.main.resources.srcDir(nativeResources)

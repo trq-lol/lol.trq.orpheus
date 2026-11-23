@@ -1,1 +1,8 @@
-dependencies { api project(':core') }
+// One source for whatever operating system the program runs on.
+
+dependencies {
+    api project(':core')
+    api project(':linux')
+    api project(':windows')
+    api project(':macos')
+}
