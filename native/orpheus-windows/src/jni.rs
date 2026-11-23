@@ -45,7 +45,13 @@ unsafe fn read(env: *mut JNIEnv, array: jbyteArray) -> Vec<u8> {
     }
 }
 
-unsafe extern "system" fn call(env: *mut JNIEnv, _class: jclass, op: jint, handle: jlong, argument: jbyteArray) -> jbyteArray {
+unsafe extern "system" fn call(
+    env: *mut JNIEnv,
+    _class: jclass,
+    op: jint,
+    handle: jlong,
+    argument: jbyteArray,
+) -> jbyteArray {
     let argument = unsafe { read(env, argument) };
     let outcome = std::panic::catch_unwind(|| -> Option<Vec<u8>> {
         let handle = handle as u64;

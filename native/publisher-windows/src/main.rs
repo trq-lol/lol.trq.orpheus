@@ -78,13 +78,9 @@ mod publisher {
             out.extend(&body);
             out.extend(crc(&body).to_be_bytes());
         }
-        let mut raw = Vec::new();
-        for _ in 0..side {
-            raw.push(0);
-            for _ in 0..side {
-                raw.extend(rgb);
-            }
-        }
+        let mut row = vec![0u8];
+        row.extend(std::iter::repeat_n(rgb, side as usize).flatten());
+        let raw = row.repeat(side as usize);
         let mut deflated = vec![0x78, 0x01];
         let mut blocks = raw.chunks(65535).peekable();
         while let Some(block) = blocks.next() {
@@ -164,8 +160,11 @@ mod publisher {
 
     fn listen(controls: &SystemMediaTransportControls) -> Result<()> {
         controls.ButtonPressed(&TypedEventHandler::new(
-            |sender: Ref<SystemMediaTransportControls>, args: Ref<SystemMediaTransportControlsButtonPressedEventArgs>| {
-                let (Some(sender), Some(args)) = (sender.as_ref(), args.as_ref()) else { return Ok(()) };
+            |sender: Ref<SystemMediaTransportControls>,
+             args: Ref<SystemMediaTransportControlsButtonPressedEventArgs>| {
+                let (Some(sender), Some(args)) = (sender.as_ref(), args.as_ref()) else {
+                    return Ok(());
+                };
                 let button = args.Button()?;
                 let name = match button {
                     SystemMediaTransportControlsButton::Play => {
@@ -200,7 +199,9 @@ mod publisher {
         ))?;
         controls.ShuffleEnabledChangeRequested(&TypedEventHandler::new(
             |sender: Ref<SystemMediaTransportControls>, args: Ref<ShuffleEnabledChangeRequestedEventArgs>| {
-                let (Some(sender), Some(args)) = (sender.as_ref(), args.as_ref()) else { return Ok(()) };
+                let (Some(sender), Some(args)) = (sender.as_ref(), args.as_ref()) else {
+                    return Ok(());
+                };
                 let on = args.RequestedShuffleEnabled()?;
                 sender.SetShuffleEnabled(on)?;
                 say(&format!("command shuffle {on}"));
@@ -209,7 +210,9 @@ mod publisher {
         ))?;
         controls.AutoRepeatModeChangeRequested(&TypedEventHandler::new(
             |sender: Ref<SystemMediaTransportControls>, args: Ref<AutoRepeatModeChangeRequestedEventArgs>| {
-                let (Some(sender), Some(args)) = (sender.as_ref(), args.as_ref()) else { return Ok(()) };
+                let (Some(sender), Some(args)) = (sender.as_ref(), args.as_ref()) else {
+                    return Ok(());
+                };
                 let mode = args.RequestedAutoRepeatMode()?;
                 sender.SetAutoRepeatMode(mode)?;
                 say(&format!("command repeat {}", mode.0));
@@ -218,7 +221,9 @@ mod publisher {
         ))?;
         controls.PlaybackRateChangeRequested(&TypedEventHandler::new(
             |sender: Ref<SystemMediaTransportControls>, args: Ref<PlaybackRateChangeRequestedEventArgs>| {
-                let (Some(sender), Some(args)) = (sender.as_ref(), args.as_ref()) else { return Ok(()) };
+                let (Some(sender), Some(args)) = (sender.as_ref(), args.as_ref()) else {
+                    return Ok(());
+                };
                 let rate = args.RequestedPlaybackRate()?;
                 sender.SetPlaybackRate(rate)?;
                 say(&format!("command rate {rate}"));

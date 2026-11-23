@@ -158,7 +158,9 @@ pub fn await_blob(handle: u64, timeout: Duration) -> Option<Vec<u8>> {
 }
 
 pub fn command(handle: u64, command: Command) -> bool {
-    let Some(instance) = find(handle) else { return false };
+    let Some(instance) = find(handle) else {
+        return false;
+    };
     instance.shared.inbox.lock().unwrap().commands.push_back(command);
     instance.shared.inbox_ready.notify_one();
     true
@@ -166,7 +168,9 @@ pub fn command(handle: u64, command: Command) -> bool {
 
 /// Stops the worker, wakes any waiting Java thread and waits for the worker to release its WinRT objects.
 pub fn close(handle: u64) {
-    let Some(instance) = table().lock().unwrap().remove(&handle) else { return };
+    let Some(instance) = table().lock().unwrap().remove(&handle) else {
+        return;
+    };
     instance.shared.inbox.lock().unwrap().stop = true;
     instance.shared.inbox_ready.notify_all();
     instance.shared.outbox.lock().unwrap().closed = true;

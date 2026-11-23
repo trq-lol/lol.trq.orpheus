@@ -116,7 +116,9 @@ fn fnv(bytes: &[u8]) -> u64 {
     hash.max(1)
 }
 
-fn read_thumbnail(session_properties: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties) -> Option<Vec<u8>> {
+fn read_thumbnail(
+    session_properties: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties,
+) -> Option<Vec<u8>> {
     let reference = session_properties.Thumbnail().ok()?;
     let stream = wait(reference.OpenReadAsync().ok()?).ok()?;
     let size = stream.Size().ok()?;
@@ -201,7 +203,9 @@ fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
                 _ => 3,
             };
             if let Ok(controls) = info.Controls() {
-                let flag = |enabled: Result<bool>, bit: u32| if enabled.unwrap_or(false) { bit } else { 0 };
+                let flag = |enabled: Result<bool>, bit: u32| {
+                    if enabled.unwrap_or(false) { bit } else { 0 }
+                };
                 state.controls = flag(controls.IsPlayEnabled(), PLAY)
                     | flag(controls.IsPauseEnabled(), PAUSE)
                     | flag(controls.IsPlayPauseToggleEnabled(), TOGGLE)
@@ -224,10 +228,8 @@ fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
 }
 
 fn serialize(sessions: &[Tracked]) -> Vec<u8> {
-    let now_ticks = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| (d.as_nanos() / 100) as i64 + EPOCH_TICKS)
-        .unwrap_or(0);
+    let now_ticks =
+        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| (d.as_nanos() / 100) as i64 + EPOCH_TICKS).unwrap_or(0);
     let mut out = vec![wire::KIND_SESSIONS];
     out.extend((sessions.len() as u32).to_le_bytes());
     for tracked in sessions {
@@ -243,7 +245,8 @@ fn serialize(sessions: &[Tracked]) -> Vec<u8> {
         out.push(s.status);
         out.extend(s.position_millis.to_le_bytes());
         out.extend(s.duration_millis.to_le_bytes());
-        let age_millis = if s.updated_ticks > EPOCH_TICKS { ((now_ticks - s.updated_ticks) / 10_000).max(0) } else { 0 };
+        let age_millis =
+            if s.updated_ticks > EPOCH_TICKS { ((now_ticks - s.updated_ticks) / 10_000).max(0) } else { 0 };
         out.extend(age_millis.to_le_bytes());
         out.extend(s.rate.to_le_bytes());
         out.push(s.shuffle);
@@ -263,7 +266,9 @@ fn execute(tracked: &Tracked, command: &Command) -> Vec<u8> {
         3 => session.TryStopAsync(),
         4 => session.TrySkipNextAsync(),
         5 => session.TrySkipPreviousAsync(),
-        6 => session.TryChangePlaybackPositionAsync(command.position_millis.saturating_mul(10_000).saturating_add(tracked.state.start_ticks)),
+        6 => session.TryChangePlaybackPositionAsync(
+            command.position_millis.saturating_mul(10_000).saturating_add(tracked.state.start_ticks),
+        ),
         7 => session.TryFastForwardAsync(),
         8 => session.TryRewindAsync(),
         9 => session.TryChangeShuffleActiveAsync(command.on),
@@ -273,7 +278,13 @@ fn execute(tracked: &Tracked, command: &Command) -> Vec<u8> {
             _ => MediaPlaybackAutoRepeatMode::None,
         }),
         11 => session.TryChangePlaybackRateAsync(command.value),
-        _ => return wire::result(command.request, wire::RESULT_UNSUPPORTED, "Windows media sessions have no such command"),
+        _ => {
+            return wire::result(
+                command.request,
+                wire::RESULT_UNSUPPORTED,
+                "Windows media sessions have no such command",
+            );
+        }
     };
     match operation.and_then(wait) {
         Ok(true) => wire::result(command.request, wire::RESULT_DONE, ""),
@@ -410,10 +421,10 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
 
         for flagged in dirty {
             let id = flagged & !MEDIA_FLAG;
-            if let Some(tracked) = sessions.iter_mut().find(|t| t.id == id) {
-                if refresh(tracked, shared, flagged & MEDIA_FLAG != 0).is_err() {
-                    relist_pending = true;
-                }
+            if let Some(tracked) = sessions.iter_mut().find(|t| t.id == id)
+                && refresh(tracked, shared, flagged & MEDIA_FLAG != 0).is_err()
+            {
+                relist_pending = true;
             }
         }
 
