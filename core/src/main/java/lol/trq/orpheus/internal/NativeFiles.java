@@ -15,7 +15,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
@@ -214,7 +213,11 @@ public final class NativeFiles {
 
     public static String sha256(byte[] data) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+            StringBuilder hex = new StringBuilder(64);
+            for (byte b : MessageDigest.getInstance("SHA-256").digest(data)) {
+                hex.append(Character.forDigit(b >> 4 & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            }
+            return hex.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }

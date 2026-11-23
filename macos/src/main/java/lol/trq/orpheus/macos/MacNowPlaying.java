@@ -10,8 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -417,7 +417,7 @@ public final class MacNowPlaying implements Source, Transport {
                 : kind.contains("audio") || Boolean.TRUE.equals(state.get("isMusicApp"))
                         ? MediaKind.MUSIC
                         : MediaKind.UNKNOWN;
-        Set<Control> controls = EnumSet.of(
+        Set<Control> controls = new HashSet<>(List.of(
                 Control.PLAY,
                 Control.PAUSE,
                 Control.TOGGLE,
@@ -425,7 +425,7 @@ public final class MacNowPlaying implements Source, Transport {
                 Control.PREVIOUS,
                 Control.SEEK,
                 Control.SHUFFLE,
-                Control.REPEAT);
+                Control.REPEAT));
         if (!Boolean.TRUE.equals(state.get("prohibitsSkip"))) {
             controls.add(Control.NEXT);
         }

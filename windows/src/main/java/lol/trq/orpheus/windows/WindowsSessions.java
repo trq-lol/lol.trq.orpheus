@@ -4,8 +4,8 @@ package lol.trq.orpheus.windows;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -181,7 +181,7 @@ public final class WindowsSessions implements Source, Transport {
         public void sessions(long builtNanosAgo, List<Blob.Session> sessions) {
             long built = System.nanoTime() - builtNanosAgo;
             List<SessionUpdate> updates = new ArrayList<>(sessions.size());
-            Set<Integer> alive = new java.util.HashSet<>();
+            Set<Integer> alive = new HashSet<>();
             for (Blob.Session s : sessions) {
                 alive.add(s.id());
                 boolean playing = s.status() == 1;
@@ -195,7 +195,7 @@ public final class WindowsSessions implements Source, Transport {
                     // the application did not refresh its timeline when it resumed: the position stood still until then
                     measured = resumed;
                 }
-                Set<Control> controls = EnumSet.noneOf(Control.class);
+                Set<Control> controls = new HashSet<>();
                 for (int bit = 0; bit < CONTROLS.length; bit++) {
                     if ((s.controls() & 1 << bit) != 0) {
                         controls.add(CONTROLS[bit]);

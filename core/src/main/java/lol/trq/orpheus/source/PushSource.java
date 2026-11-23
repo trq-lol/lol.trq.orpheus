@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 package lol.trq.orpheus.source;
 
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -125,7 +124,7 @@ public final class PushSource implements Source, Transport {
             sink.sessions(List.of());
             return;
         }
-        Set<Control> controls = handlers.isEmpty() ? Set.of() : EnumSet.copyOf(handlers.keySet());
+        Set<Control> controls = Set.copyOf(handlers.keySet());
         sink.sessions(List.of(new SessionUpdate(
                 SESSION,
                 app,

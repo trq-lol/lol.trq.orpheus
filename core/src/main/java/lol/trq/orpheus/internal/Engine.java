@@ -2,9 +2,8 @@
 package lol.trq.orpheus.internal;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,7 +80,7 @@ public final class Engine {
     private final List<List<SessionUpdate>> bySource = new ArrayList<>();
     private final Map<String, Long> changedAt = new HashMap<>();
     private final Map<String, SessionUpdate> last = new HashMap<>();
-    private final Map<Control, Target> routes = new EnumMap<>(Control.class);
+    private final Map<Control, Target> routes = new HashMap<>();
     private final Map<String, Long> offsets = new LinkedHashMap<>(16, 0.75f, true);
 
     private AppRules rules;
@@ -345,7 +344,7 @@ public final class Engine {
         String coverUri = p.coverUri();
         boolean share = shareable.contains(source.id());
         DisplayRules display = source.display();
-        Set<Control> controls = EnumSet.noneOf(Control.class);
+        Set<Control> controls = new HashSet<>();
         controls.addAll(p.controls());
         routes.clear();
         for (Control control : controls) {

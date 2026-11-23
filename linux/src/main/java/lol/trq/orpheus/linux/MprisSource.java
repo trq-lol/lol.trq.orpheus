@@ -8,8 +8,8 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -486,7 +486,7 @@ public final class MprisSource implements Source, Transport {
     }
 
     private static Set<Control> controls(Map<Object, Object> p) {
-        Set<Control> controls = EnumSet.noneOf(Control.class);
+        Set<Control> controls = new HashSet<>();
         if (Boolean.FALSE.equals(p.get("CanControl"))) {
             return controls;
         }
