@@ -19,6 +19,13 @@ class AppRulesTest {
         assertTrue(visible(rules, "org.mpris.MediaPlayer2.spotify", MediaKind.UNKNOWN));
         assertTrue(visible(rules, "com.spotify.client", MediaKind.MUSIC));
         assertFalse(visible(rules, "notspotify.exe", MediaKind.MUSIC));
+        assertFalse(visible(rules, "", MediaKind.MUSIC));
+        AppRules dotted = AppRules.none().allow("com.apple.Music", "my-player");
+        assertTrue(visible(dotted, "com.apple.music", MediaKind.MUSIC));
+        assertFalse(visible(dotted, "com.apple.Safari", MediaKind.MUSIC), "one shared part is not a match");
+        assertFalse(visible(dotted, "music.apple.com", MediaKind.MUSIC), "the parts must be in order");
+        assertTrue(visible(dotted, "My-Player.exe", MediaKind.MUSIC));
+        assertTrue(visible(AppRules.defaults(), "com.apple.Music", MediaKind.MUSIC));
     }
 
     @Test
