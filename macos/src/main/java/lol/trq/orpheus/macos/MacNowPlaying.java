@@ -144,7 +144,12 @@ public final class MacNowPlaying implements Source, Transport {
             try {
                 Runtime.getRuntime().addShutdownHook(hook);
             } catch (IllegalStateException e) {
+                // the JVM is ending: a helper started now would be left behind
                 hook = null;
+                commands.shutdownNow();
+                commands = null;
+                sink.status(SourceStatus.unavailable("the JVM is shutting down"));
+                return;
             }
             reader = new Thread(() -> run(sink), "orpheus-macos");
             reader.setDaemon(true);
