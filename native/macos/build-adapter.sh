@@ -5,7 +5,7 @@ set -eu
 
 repository=https://github.com/ungive/mediaremote-adapter.git
 tag=v0.8.0
-commit=a7cc273
+commit=65714990277cb4d0415ebaf7fff6be3229362b28
 
 here=$(cd "$(dirname "$0")" && pwd)
 work=$here/build
