@@ -1,0 +1,77 @@
+# Publishes a version. Manual only: nothing is released by pushing a tag. Run it from the tag to release.
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, without the leading v (must match the tag it is run from)
+        required: true
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  windows-native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - working-directory: native
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo build --release --locked -p orpheus-windows --target x86_64-pc-windows-msvc
+      - run: |
+          mkdir dist/windows-x64
+          copy native\target\x86_64-pc-windows-msvc\release\orpheus.dll dist\windows-x64\
+        shell: cmd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: natives-windows
+          path: dist
+
+  macos-native:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - run: sh native/macos/build-adapter.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: natives-macos
+          path: native/dist
+
+  release:
+    needs: [windows-native, macos-native]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Refuse to run from anything but the matching tag
+        run: test "$GITHUB_REF" = "refs/tags/v${{ inputs.version }}"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: natives-*
+          path: natives
+          merge-multiple: true
+      - name: Build
+        run: ./gradlew spotlessCheck build -Pversion=${{ inputs.version }} -Porpheus.natives=$PWD/natives
+      - name: Publish to GitHub Packages
+        run: ./gradlew publishAllPublicationsToGitHubPackagesRepository -Pversion=${{ inputs.version }} -Porpheus.natives=$PWD/natives
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${{ inputs.version }}
+          mkdir out
+          for module in core linux windows macos system; do
+            for kind in "" "-sources"; do
+              cp "$module/build/libs/orpheus-$module-${version}${kind}.jar" out/
+            done
+          done
+          (cd out && for jar in *.jar; do sha256sum "$jar" > "$jar.sha256"; done)
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' CHANGELOG.md > notes.md
+          gh release create "v$version" --title "lol.trq.orpheus $version" --notes-file notes.md out/*

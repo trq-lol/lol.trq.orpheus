@@ -1,0 +1,50 @@
+# Builds the site. Manual only until the project is public: deployment is not enabled.
+name: pages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew javadocAll
+      - name: Add the docs to the site source
+        run: rsync -a --exclude=site --exclude=".*" --exclude=build --exclude=native ./ site/
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./site
+          destination: ./_site
+      - name: Add the Javadoc under /api/
+        run: |
+          sudo mkdir -p _site/api
+          sudo cp -r build/docs/javadoc/. _site/api/
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./_site
+
+  # To publish: enable Pages (source: GitHub Actions) with the custom domain, add `push: branches: [main]` above,
+  # and uncomment this job.
+  # deploy:
+  #   if: github.ref == 'refs/heads/main'
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     pages: write
+  #     id-token: write
+  #   environment:
+  #     name: github-pages
+  #     url: ${{ steps.deployment.outputs.page_url }}
+  #   steps:
+  #     - id: deployment
+  #       uses: actions/deploy-pages@v5

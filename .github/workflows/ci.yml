@@ -1,0 +1,75 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+            25
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew spotlessCheck build
+      - name: Run the transformed jars on Java 8, 17 and 25
+        run: ./gradlew :harness:compat
+      - name: Live harness against a session bus
+        run: |
+          ./gradlew :harness:installDist
+          dbus-run-session -- harness/build/install/harness/bin/harness live --out live-linux.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-linux
+          path: live-linux.jsonl
+          if-no-files-found: ignore
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+            25
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Check the native code
+        working-directory: native
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo fmt --check
+          cargo clippy --target x86_64-pc-windows-msvc -- -D warnings
+          cargo build --release --locked --target x86_64-pc-windows-msvc
+      - run: ./gradlew build
+      - name: Run the transformed jars on Java 8, 17 and 25
+        run: ./gradlew :harness:compat
+      - name: Live harness against a real media session
+        run: |
+          ./gradlew :harness:installDist
+          harness/build/install/harness/bin/harness.bat live --out live-windows.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-windows
+          path: live-windows.jsonl
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: native/target/x86_64-pc-windows-msvc/release/orpheus.dll
