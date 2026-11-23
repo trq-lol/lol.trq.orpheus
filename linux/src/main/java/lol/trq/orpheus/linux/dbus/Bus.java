@@ -208,14 +208,18 @@ public final class Bus implements AutoCloseable {
                 }
             }
         } catch (IOException | RuntimeException e) {
-            // falls through to the shutdown below
-        }
-        boolean unexpected = !closed;
-        shutdown();
-        if (unexpected) {
-            onClose.run();
+            // the connection ends below
+        } finally {
+            boolean unexpected = !closed;
+            shutdown();
+            if (unexpected) {
+                onClose.run();
+            }
         }
     }
+
+    /** The runtime keeps a native buffer as large as the largest read for as long as the thread lives. */
+    private static final int READ_BYTES = 64 << 10;
 
     private void skip(long length) throws IOException {
         ByteBuffer buffer = ByteBuffer.allocate(64 * 1024);
@@ -232,7 +236,8 @@ public final class Bus implements AutoCloseable {
 
     private byte[] readFully(int length) throws IOException {
         ByteBuffer buffer = ByteBuffer.allocate(length);
-        while (buffer.hasRemaining()) {
+        while (buffer.position() < length) {
+            buffer.limit(Math.min(length, buffer.position() + READ_BYTES));
             if (channel.read(buffer) < 0) {
                 throw new EOFException();
             }

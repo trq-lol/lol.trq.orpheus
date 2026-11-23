@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 package lol.trq.orpheus.linux;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -18,6 +19,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import lol.trq.orpheus.Control;
@@ -61,6 +63,22 @@ public final class MprisSource implements Source, Transport {
     private static final String NO_TRACK = "/org/mpris/MediaPlayer2/TrackList/NoTrack";
     private static final long CALL_TIMEOUT_MILLIS = 3000;
     private static final long POSITION_INTERVAL_MILLIS = 5000;
+    private static final int MAX_PLAYERS = 64;
+    private static final Set<String> KEPT = Set.of(
+            "PlaybackStatus",
+            "LoopStatus",
+            "Rate",
+            "Shuffle",
+            "Metadata",
+            "Volume",
+            "MinimumRate",
+            "MaximumRate",
+            "CanGoNext",
+            "CanGoPrevious",
+            "CanPlay",
+            "CanPause",
+            "CanSeek",
+            "CanControl");
 
     private static final class Player {
         final String name;
@@ -196,15 +214,16 @@ public final class MprisSource implements Source, Transport {
         return false;
     }
 
-    private void later(Runnable task, long millis) {
+    private ScheduledFuture<?> later(Runnable task, long millis) {
         ScheduledExecutorService current = worker;
         if (current != null) {
             try {
-                current.schedule(guarded(task), millis, TimeUnit.MILLISECONDS);
+                return current.schedule(guarded(task), millis, TimeUnit.MILLISECONDS);
             } catch (RejectedExecutionException e) {
                 // stopping
             }
         }
+        return null;
     }
 
     private void status(SourceStatus status) {
@@ -294,15 +313,23 @@ public final class MprisSource implements Source, Transport {
         }
         CompletableFuture<Message> reply = current.call(message);
         reply.whenComplete((value, error) -> result.complete(error == null ? value : null));
-        later(() -> result.complete(null), CALL_TIMEOUT_MILLIS);
-        result.whenComplete((value, error) -> reply.cancel(false));
+        ScheduledFuture<?> timeout = later(() -> result.complete(null), CALL_TIMEOUT_MILLIS);
+        result.whenComplete((value, error) -> {
+            reply.cancel(false);
+            if (timeout != null) {
+                timeout.cancel(false);
+            }
+        });
         return result;
     }
 
     // ---- players
 
     private void add(String name) {
-        if (!name.startsWith(PREFIX) || name.equals(PREFIX + "playerctld") || players.containsKey(name)) {
+        if (!name.startsWith(PREFIX)
+                || name.equals(PREFIX + "playerctld")
+                || players.containsKey(name)
+                || players.size() >= MAX_PLAYERS) {
             return;
         }
         Player player = new Player(name);
@@ -330,12 +357,32 @@ public final class MprisSource implements Source, Transport {
                         return;
                     }
                     Map<?, ?> all = properties(reply);
-                    player.properties.putAll(all);
+                    merge(player, all);
                     if (all.get("Position") instanceof Long micros) {
                         position(player, micros);
                     }
                     publish();
                 }));
+    }
+
+    /** Takes over the properties that are used; a new song starts at its beginning until the player says otherwise. */
+    private void merge(Player player, Map<?, ?> changed) {
+        Object before = song(player);
+        for (Map.Entry<?, ?> entry : changed.entrySet()) {
+            if (entry.getKey() instanceof String name && KEPT.contains(name)) {
+                player.properties.put(name, entry.getValue());
+            }
+        }
+        if (changed.containsKey("Metadata") && before != null && !before.equals(song(player))) {
+            position(player, 0);
+        }
+    }
+
+    private static Object song(Player player) {
+        if (!(player.properties.get("Metadata") instanceof Map<?, ?> m)) {
+            return null;
+        }
+        return text(m.get("mpris:trackid")) + "\n" + text(m.get("xesam:title"));
     }
 
     private static Map<?, ?> properties(Message reply) {
@@ -390,7 +437,10 @@ public final class MprisSource implements Source, Transport {
             return;
         }
         List<Object> body = message.body();
-        if (message.member().equals("NameOwnerChanged") && DBUS.equals(message.iface()) && body.size() == 3) {
+        if (message.member().equals("NameOwnerChanged")
+                && DBUS.equals(message.iface())
+                && DBUS.equals(message.sender())
+                && body.size() == 3) {
             String name = String.valueOf(body.get(0));
             if (String.valueOf(body.get(2)).isEmpty()) {
                 if (players.remove(name) != null) {
@@ -425,7 +475,7 @@ public final class MprisSource implements Source, Transport {
                 // freeze the position where it is now: the new state must not start from an old measurement
                 position(player, currentMicros(player));
             }
-            player.properties.putAll(changed);
+            merge(player, changed);
             if (body.get(2) instanceof List<?> invalidated && !invalidated.isEmpty()) {
                 loadAll(player);
             } else if (moved) {
@@ -498,7 +548,7 @@ public final class MprisSource implements Source, Transport {
                 p.get("Volume") instanceof Number volume ? Math.max(0, Math.min(1, volume.doubleValue())) : Double.NaN,
                 controls(p),
                 player.art,
-                player.art == null ? artUrl : null);
+                player.art == null && remote(artUrl) ? artUrl : null);
     }
 
     private static Set<Control> controls(Map<Object, Object> p) {
@@ -599,11 +649,18 @@ public final class MprisSource implements Source, Transport {
                 // file claims to be, and keep it only when it starts like an image.
                 byte[] data;
                 try (InputStream in = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) {
-                    data = in.readNBytes(CoverDecoder.MAX_ENCODED_BYTES + 1);
+                    data = in.readNBytes(8);
+                    if (CoverDecoder.format(data) == null) {
+                        return null;
+                    }
+                    ByteArrayOutputStream all = new ByteArrayOutputStream();
+                    while (data.length > 0 && all.size() <= CoverDecoder.MAX_ENCODED_BYTES) {
+                        all.write(data, 0, data.length);
+                        data = in.readNBytes(64 << 10);
+                    }
+                    data = all.toByteArray();
                 }
-                return data.length <= CoverDecoder.MAX_ENCODED_BYTES && looksLikeAnImage(data)
-                        ? CoverData.of(data)
-                        : null;
+                return data.length <= CoverDecoder.MAX_ENCODED_BYTES ? CoverData.of(data) : null;
             }
         } catch (IOException | RuntimeException e) {
             // unreadable art is no art
@@ -611,15 +668,8 @@ public final class MprisSource implements Source, Transport {
         return null;
     }
 
-    private static boolean looksLikeAnImage(byte[] d) {
-        if (d.length < 8) {
-            return false;
-        }
-        boolean png = (d[0] & 0xFF) == 0x89 && d[1] == 'P' && d[2] == 'N' && d[3] == 'G';
-        boolean jpeg = (d[0] & 0xFF) == 0xFF && (d[1] & 0xFF) == 0xD8 && (d[2] & 0xFF) == 0xFF;
-        boolean gif = d[0] == 'G' && d[1] == 'I' && d[2] == 'F' && d[3] == '8';
-        boolean bmp = d[0] == 'B' && d[1] == 'M';
-        return png || jpeg || gif || bmp;
+    private static boolean remote(String url) {
+        return url != null && (url.startsWith("https:") || url.startsWith("http:"));
     }
 
     // ---- commands

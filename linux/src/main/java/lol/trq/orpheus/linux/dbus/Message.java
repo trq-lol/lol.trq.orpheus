@@ -40,6 +40,7 @@ public record Message(
     public static final int MAX_BYTES = 8 << 20;
 
     private static final int NO_REPLY_EXPECTED = 1;
+    private static final int NO_AUTO_START = 2;
 
     public static Message call(
             String destination, String path, String iface, String member, String signature, Object... body) {
@@ -80,7 +81,7 @@ public record Message(
         Wire.Writer out = new Wire.Writer();
         out.write("y", (int) 'l')
                 .write("y", type)
-                .write("y", type == SIGNAL ? NO_REPLY_EXPECTED : 0)
+                .write("y", type == SIGNAL ? NO_REPLY_EXPECTED : type == CALL ? NO_AUTO_START : 0)
                 .write("y", 1);
         out.write("u", (long) content.size()).write("u", withSerial).write("u", (long) fields.size());
         out.raw(fields.bytes()).pad(8).raw(content.bytes());
