@@ -12,7 +12,7 @@ mod sessions;
 mod wire;
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -42,7 +42,7 @@ struct Inbox {
     stop: bool,
     relist: bool,
     dirty: Vec<u32>,
-    commands: VecDeque<Command>,
+    commands: VecDeque<(Instant, Command)>,
 }
 
 #[derive(Default)]
@@ -54,6 +54,7 @@ struct Outbox {
 
 /// State shared between the worker, the WinRT handlers and the Java threads.
 pub struct Shared {
+    stopping: AtomicBool,
     inbox: Mutex<Inbox>,
     inbox_ready: Condvar,
     outbox: Mutex<Outbox>,
@@ -61,6 +62,10 @@ pub struct Shared {
 }
 
 impl Shared {
+    pub fn stopping(&self) -> bool {
+        self.stopping.load(Ordering::Relaxed)
+    }
+
     pub fn mark_relist(&self) {
         self.inbox.lock().unwrap().relist = true;
         self.inbox_ready.notify_one();
@@ -103,6 +108,7 @@ fn find(handle: u64) -> Option<Arc<Instance>> {
 pub fn open() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let shared = Arc::new(Shared {
+        stopping: AtomicBool::new(false),
         inbox: Mutex::default(),
         inbox_ready: Condvar::new(),
         outbox: Mutex::default(),
@@ -165,7 +171,7 @@ pub fn command(handle: u64, command: Command) -> bool {
     let Some(instance) = find(handle) else {
         return false;
     };
-    instance.shared.inbox.lock().unwrap().commands.push_back(command);
+    instance.shared.inbox.lock().unwrap().commands.push_back((Instant::now(), command));
     instance.shared.inbox_ready.notify_one();
     true
 }
@@ -175,6 +181,7 @@ pub fn close(handle: u64) {
     let Some(instance) = table().lock().unwrap().remove(&handle) else {
         return;
     };
+    instance.shared.stopping.store(true, Ordering::Relaxed);
     instance.shared.inbox.lock().unwrap().stop = true;
     instance.shared.inbox_ready.notify_all();
     instance.shared.outbox.lock().unwrap().closed = true;

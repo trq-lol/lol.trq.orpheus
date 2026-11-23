@@ -4,8 +4,8 @@ package lol.trq.orpheus.windows;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,7 +42,7 @@ import lol.trq.orpheus.source.Transport;
  */
 public final class WindowsSessions implements Source, Transport {
     private static final int AWAIT_MILLIS = 60_000;
-    private static final int MAX_THUMBNAILS = 16;
+    private static final long HEALTHY_NANOS = 30_000_000_000L;
     private static final Control[] CONTROLS = Control.values();
 
     private final Object lifecycle = new Object();
@@ -84,15 +84,17 @@ public final class WindowsSessions implements Source, Transport {
     @Override
     public void stop() {
         Thread ending;
+        long closing;
         synchronized (lifecycle) {
             ending = thread;
             thread = null;
             stopping = true;
-            if (handle != 0) {
-                Bridge.invoke(Bridge.OP_CLOSE, handle, null);
-                handle = 0;
-            }
+            closing = handle;
+            handle = 0;
             lifecycle.notifyAll();
+        }
+        if (closing != 0) {
+            Bridge.invoke(Bridge.OP_CLOSE, closing, null);
         }
         if (ending != null && ending != Thread.currentThread()) {
             try {
@@ -137,7 +139,8 @@ public final class WindowsSessions implements Source, Transport {
                         : ByteBuffer.wrap(opened).order(ByteOrder.LITTLE_ENDIAN).getLong();
                 handle = current;
             }
-            Reader reader = new Reader(sink, backoff);
+            long openedAt = System.nanoTime();
+            Reader reader = new Reader(sink);
             while (current != 0 && !reader.failed) {
                 byte[] blob = Bridge.invoke(Bridge.OP_AWAIT, current, timeout);
                 if (blob == null) {
@@ -146,13 +149,20 @@ public final class WindowsSessions implements Source, Transport {
                 Blob.read(blob, reader);
             }
             failPending("the media session service stopped");
+            long closing;
+            synchronized (lifecycle) {
+                closing = handle;
+                handle = 0;
+            }
+            if (closing != 0) {
+                Bridge.invoke(Bridge.OP_CLOSE, closing, null);
+            }
+            if (System.nanoTime() - openedAt > HEALTHY_NANOS) {
+                backoff.reset();
+            }
             synchronized (lifecycle) {
                 if (stopping) {
                     return;
-                }
-                if (handle != 0) {
-                    Bridge.invoke(Bridge.OP_CLOSE, handle, null);
-                    handle = 0;
                 }
                 sink.sessions(List.of());
                 try {
@@ -167,13 +177,12 @@ public final class WindowsSessions implements Source, Transport {
     /** Turns records into reports. Lives for one native handle. */
     private final class Reader implements Blob.Handler {
         private final SourceSink sink;
-        private final Backoff backoff;
-        private final Map<Long, CoverData> thumbnails = new LinkedHashMap<>(16, 0.75f, true);
+        private final Map<Long, CoverData> thumbnails = new HashMap<>();
+        private final Set<Long> fresh = new HashSet<>();
         boolean failed;
 
-        Reader(SourceSink sink, Backoff backoff) {
+        Reader(SourceSink sink) {
             this.sink = sink;
-            this.backoff = backoff;
         }
 
         @Override
@@ -230,15 +239,20 @@ public final class WindowsSessions implements Source, Transport {
                         thumbnails.get(s.thumbnail()),
                         null));
             }
+            // a thumbnail may arrive just before the sessions that use it
+            Set<Long> used = new HashSet<>(fresh);
+            for (Blob.Session s : sessions) {
+                used.add(s.thumbnail());
+            }
+            thumbnails.keySet().retainAll(used);
+            fresh.clear();
             sink.sessions(updates);
         }
 
         @Override
         public void thumbnail(long key, byte[] bytes) {
             thumbnails.put(key, new CoverData(Long.toHexString(key) + "-" + bytes.length, bytes));
-            if (thumbnails.size() > MAX_THUMBNAILS) {
-                thumbnails.remove(thumbnails.keySet().iterator().next());
-            }
+            fresh.add(key);
         }
 
         @Override
@@ -258,7 +272,6 @@ public final class WindowsSessions implements Source, Transport {
         @Override
         public void status(boolean ready, String reason) {
             if (ready) {
-                backoff.reset();
                 sink.status(SourceStatus.READY);
             } else {
                 failed = true;

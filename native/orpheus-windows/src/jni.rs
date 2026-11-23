@@ -19,15 +19,18 @@ const SIGNATURE: &CStr = c"(IJ[B)[B";
 
 macro_rules! env {
     ($env:expr, $function:ident $(, $argument:expr)*) => {
-        ((**$env).$function.unwrap())($env $(, $argument)*)
+        ((**$env).v1_2.$function)($env $(, $argument)*)
     };
 }
 
 unsafe fn bytes(env: *mut JNIEnv, data: &[u8]) -> jbyteArray {
     unsafe {
-        let array = env!(env, NewByteArray, data.len() as jsize);
+        let Ok(length) = jsize::try_from(data.len()) else {
+            return ptr::null_mut();
+        };
+        let array = env!(env, NewByteArray, length);
         if !array.is_null() {
-            env!(env, SetByteArrayRegion, array, 0, data.len() as jsize, data.as_ptr() as *const jbyte);
+            env!(env, SetByteArrayRegion, array, 0, length, data.as_ptr() as *const jbyte);
         }
         array
     }
@@ -93,8 +96,11 @@ unsafe fn bind(env: *mut JNIEnv) -> Option<()> {
             return None;
         }
         let key = env!(env, NewStringUTF, HANDSHAKE_PROPERTY.as_ptr());
+        if key.is_null() {
+            return None;
+        }
         let value = env!(env, CallStaticObjectMethod, system, get, key);
-        if value.is_null() || env!(env, ExceptionCheck) != 0 {
+        if value.is_null() || env!(env, ExceptionCheck) {
             return None;
         }
         let chars = env!(env, GetStringUTFChars, value, ptr::null_mut());
@@ -124,11 +130,11 @@ unsafe fn bind(env: *mut JNIEnv) -> Option<()> {
 pub unsafe extern "system" fn JNI_OnLoad(vm: *mut JavaVM, _reserved: *mut c_void) -> jint {
     unsafe {
         let mut env: *mut JNIEnv = ptr::null_mut();
-        if ((**vm).GetEnv.unwrap())(vm, &mut env as *mut _ as *mut *mut c_void, JNI_VERSION_1_8) != JNI_OK {
+        if ((**vm).v1_2.GetEnv)(vm, &mut env as *mut _ as *mut *mut c_void, JNI_VERSION_1_8) != JNI_OK {
             return JNI_ERR;
         }
         if bind(env).is_none() {
-            if env!(env, ExceptionCheck) != 0 {
+            if env!(env, ExceptionCheck) {
                 env!(env, ExceptionClear);
             }
             return JNI_ERR;

@@ -20,6 +20,8 @@ use windows_future::{AsyncStatus, IAsyncOperation};
 use crate::{Command, Shared, wire};
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(3);
+/// Java gives up on a command after this long; running it later would surprise the user.
+const COMMAND_LIFETIME: Duration = Duration::from_secs(5);
 const RELIST_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_THUMBNAIL_BYTES: u64 = 16 << 20;
 const MAX_TEXT_BYTES: usize = 4096;
@@ -42,14 +44,14 @@ const REPEAT: u32 = 1 << 10;
 const RATE: u32 = 1 << 11;
 
 /// Waits for a WinRT operation without ever blocking for good on a frozen application.
-fn wait<T: RuntimeType + 'static>(operation: IAsyncOperation<T>) -> Result<T> {
+fn wait<T: RuntimeType + 'static>(shared: &Shared, operation: IAsyncOperation<T>) -> Result<T> {
     let started = Instant::now();
     loop {
         if operation.Status()? != AsyncStatus::Started {
             return operation.GetResults();
         }
         let elapsed = started.elapsed();
-        if elapsed > CALL_TIMEOUT {
+        if elapsed > CALL_TIMEOUT || shared.stopping() {
             let _ = operation.Cancel();
             return Err(Error::from(ERROR_TIMEOUT));
         }
@@ -87,6 +89,10 @@ struct Tracked {
     session: Session,
     tokens: [i64; 3],
     state: State,
+    /// When the position was last seen to change, for applications that report no time of their own.
+    measured: Instant,
+    failures: u32,
+    retry_at: Option<Instant>,
 }
 
 impl Tracked {
@@ -117,16 +123,17 @@ fn fnv(bytes: &[u8]) -> u64 {
 }
 
 fn read_thumbnail(
+    shared: &Shared,
     session_properties: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties,
 ) -> Option<Vec<u8>> {
     let reference = session_properties.Thumbnail().ok()?;
-    let stream = wait(reference.OpenReadAsync().ok()?).ok()?;
+    let stream = wait(shared, reference.OpenReadAsync().ok()?).ok()?;
     let size = stream.Size().ok()?;
     if size == 0 || size > MAX_THUMBNAIL_BYTES {
         return None;
     }
     let reader = DataReader::CreateDataReader(&stream).ok()?;
-    let loaded = wait(reader.LoadAsync(size as u32).ok()?).ok()?;
+    let loaded = wait(shared, reader.LoadAsync(size as u32).ok()?).ok()?;
     let mut bytes = vec![0u8; loaded as usize];
     reader.ReadBytes(&mut bytes).ok()?;
     let _ = reader.Close();
@@ -141,7 +148,7 @@ fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
     let mut first_error = None;
 
     if media {
-        match session.TryGetMediaPropertiesAsync().and_then(wait) {
+        match session.TryGetMediaPropertiesAsync().and_then(|o| wait(shared, o)) {
             Ok(properties) => {
                 state.title = cap(properties.Title().map(|s| s.to_string()).unwrap_or_default());
                 state.artist = cap(properties.Artist().map(|s| s.to_string()).unwrap_or_default());
@@ -154,7 +161,7 @@ fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
                     Ok(MediaPlaybackType::Image) => 3,
                     _ => 0,
                 };
-                match read_thumbnail(&properties) {
+                match read_thumbnail(shared, &properties) {
                     Some(bytes) => {
                         let key = fnv(&bytes);
                         if key != state.thumbnail {
@@ -223,8 +230,28 @@ fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
         Err(error) => first_error = first_error.or(Some(error)),
     }
 
+    let old = &tracked.state;
+    if state.position_millis != old.position_millis
+        || state.updated_ticks != old.updated_ticks
+        || state.status != old.status
+        || state.title != old.title
+    {
+        tracked.measured = Instant::now();
+    }
     tracked.state = state;
-    first_error.map_or(Ok(()), Err)
+    match first_error {
+        None => {
+            tracked.failures = 0;
+            tracked.retry_at = None;
+            Ok(())
+        }
+        Some(error) => {
+            let delay = RELIST_INTERVAL * (1 << tracked.failures.min(6));
+            tracked.failures += 1;
+            tracked.retry_at = Some(Instant::now() + delay);
+            Err(error)
+        }
+    }
 }
 
 fn serialize(sessions: &[Tracked]) -> Vec<u8> {
@@ -245,8 +272,11 @@ fn serialize(sessions: &[Tracked]) -> Vec<u8> {
         out.push(s.status);
         out.extend(s.position_millis.to_le_bytes());
         out.extend(s.duration_millis.to_le_bytes());
-        let age_millis =
-            if s.updated_ticks > EPOCH_TICKS { ((now_ticks - s.updated_ticks) / 10_000).max(0) } else { 0 };
+        let age_millis = if s.updated_ticks > EPOCH_TICKS {
+            ((now_ticks - s.updated_ticks) / 10_000).max(0)
+        } else {
+            tracked.measured.elapsed().as_millis() as i64
+        };
         out.extend(age_millis.to_le_bytes());
         out.extend(s.rate.to_le_bytes());
         out.push(s.shuffle);
@@ -257,7 +287,7 @@ fn serialize(sessions: &[Tracked]) -> Vec<u8> {
     out
 }
 
-fn execute(tracked: &Tracked, command: &Command) -> Vec<u8> {
+fn execute(shared: &Shared, tracked: &Tracked, command: &Command) -> Vec<u8> {
     let session = &tracked.session;
     let operation = match command.control {
         0 => session.TryPlayAsync(),
@@ -286,7 +316,7 @@ fn execute(tracked: &Tracked, command: &Command) -> Vec<u8> {
             );
         }
     };
-    match operation.and_then(wait) {
+    match operation.and_then(|o| wait(shared, o)) {
         Ok(true) => wire::result(command.request, wire::RESULT_DONE, ""),
         Ok(false) => wire::result(command.request, wire::RESULT_REFUSED, "the application did not accept the command"),
         Err(error) => wire::result(command.request, wire::RESULT_FAILED, &error.message()),
@@ -309,7 +339,7 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
         Err(error) if error.code() == RPC_E_CHANGED_MODE => Apartment(false),
         Err(error) => return Err(error),
     };
-    let manager = wait(Manager::RequestAsync()?)?;
+    let manager = wait(shared, Manager::RequestAsync()?)?;
     let for_handler = shared.clone();
     let sessions_token = manager.SessionsChanged(&TypedEventHandler::new(move |_, _| {
         for_handler.mark_relist();
@@ -335,8 +365,13 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
                 if inbox.relist || !inbox.dirty.is_empty() || !inbox.commands.is_empty() || relist {
                     break;
                 }
+                let mut due = sessions.iter().filter_map(|t| t.retry_at).min();
                 if relist_pending {
-                    let wait_for = RELIST_INTERVAL.saturating_sub(last_relist.map_or(RELIST_INTERVAL, |t| t.elapsed()));
+                    let at = last_relist.map_or_else(Instant::now, |t| t + RELIST_INTERVAL);
+                    due = Some(due.map_or(at, |d| d.min(at)));
+                }
+                if let Some(due) = due {
+                    let wait_for = due.saturating_duration_since(Instant::now());
                     if wait_for.is_zero() {
                         break;
                     }
@@ -365,7 +400,7 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
                     Err(_) => {
                         relist_pending = true;
                         last_relist = Some(Instant::now());
-                        for command in commands {
+                        for (_, command) in commands {
                             let reason = "the media session service did not answer";
                             shared.publish(wire::result(command.request, wire::RESULT_FAILED, reason));
                         }
@@ -409,10 +444,13 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
                             }))
                             .unwrap_or(0),
                     ];
-                    let state = previous.map(|old| old.state).unwrap_or_default();
-                    let mut tracked = Tracked { id, app, session, tokens, state };
-                    if refresh(&mut tracked, shared, true).is_err() {
-                        relist_pending = true;
+                    let (state, measured, failures) = match previous {
+                        Some(old) => (old.state, old.measured, old.failures),
+                        None => (State::default(), Instant::now(), 0),
+                    };
+                    let mut tracked = Tracked { id, app, session, tokens, state, measured, failures, retry_at: None };
+                    if !shared.stopping() {
+                        let _ = refresh(&mut tracked, shared, true);
                     }
                     kept.push(tracked);
                 }
@@ -427,16 +465,26 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
 
         for flagged in dirty {
             let id = flagged & !MEDIA_FLAG;
-            if let Some(tracked) = sessions.iter_mut().find(|t| t.id == id)
-                && refresh(tracked, shared, flagged & MEDIA_FLAG != 0).is_err()
-            {
-                relist_pending = true;
+            if let Some(tracked) = sessions.iter_mut().find(|t| t.id == id) {
+                let _ = refresh(tracked, shared, flagged & MEDIA_FLAG != 0);
             }
         }
+        // A session whose calls keep failing is asked again less and less often.
+        let now = Instant::now();
+        for tracked in sessions.iter_mut().filter(|t| t.retry_at.is_some_and(|at| at <= now)) {
+            if shared.stopping() {
+                break;
+            }
+            let _ = refresh(tracked, shared, true);
+        }
 
-        for command in commands {
+        for (queued, command) in commands {
+            if queued.elapsed() > COMMAND_LIFETIME {
+                shared.publish(wire::result(command.request, wire::RESULT_FAILED, "the command waited too long"));
+                continue;
+            }
             let record = match sessions.iter().find(|t| t.id == command.session) {
-                Some(tracked) => execute(tracked, &command),
+                Some(tracked) => execute(shared, tracked, &command),
                 None => wire::result(command.request, wire::RESULT_REFUSED, "the session is gone"),
             };
             shared.publish(record);
