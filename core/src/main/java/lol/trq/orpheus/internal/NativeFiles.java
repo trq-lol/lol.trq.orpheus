@@ -4,7 +4,6 @@ package lol.trq.orpheus.internal;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -131,11 +130,9 @@ public final class NativeFiles {
             }
             try {
                 Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE);
-            } catch (FileAlreadyExistsException
-                    | AtomicMoveNotSupportedException
-                    | java.nio.file.DirectoryNotEmptyException
-                    | java.nio.file.AccessDeniedException e) {
-                // another process got there first, or left a damaged copy behind
+            } catch (IOException e) {
+                // The target exists: another process got there first, or left a damaged copy behind. Which exception
+                // says so differs between systems, so the state on disk decides.
                 if (!verified(target, items)) {
                     repair(staging, target, items);
                 }
