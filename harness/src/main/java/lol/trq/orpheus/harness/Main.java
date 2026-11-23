@@ -24,7 +24,8 @@ import lol.trq.orpheus.event.SourceStatusChanged;
  * live  [--publisher path] [--only a,b] [--out file]   run every scenario against a generated session
  * watch [--seconds n] [--allow app,...] [--only app,...] [--all] [--send pause,play,...]
  *                                                       print what the system reports (for trying real players)
- * soak  [--minutes n] [--publisher path]                run for a while and report resource use
+ * soak  [--minutes n] [--sample seconds] [--idle] [--cache-bytes n] [--publisher path]
+ *                                                       run for a while and report resource use
  * </pre>
  */
 public final class Main {

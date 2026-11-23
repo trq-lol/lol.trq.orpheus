@@ -24,7 +24,8 @@ sources ──► SourceSink ──► Engine (one thread) ──► volatile Sn
 
 ## The patterns that matter
 
-- Everything public is immutable or thread-safe. `orpheus.snapshot()` is one volatile read.
+- Everything public is immutable or thread-safe, with one stated exception: `Cover.rgba()` and `palette()` hand
+  out the cached arrays, which callers must not modify. `orpheus.snapshot()` is one volatile read.
 - A report is trusted for its position when it differs from the extrapolation by more than 100 ms; otherwise the old
   anchor is kept so the bar does not jitter.
 - Selection is sticky: the selected session keeps its place for 3 s after it stops playing.
@@ -38,8 +39,9 @@ sources ──► SourceSink ──► Engine (one thread) ──► volatile Sn
 
 - Do not add `ServiceLoader`, `Class.forName` on the library's own classes, or string constants that look like its
   package names. Consumers relocate and obfuscate the jars.
-- Do not call `SocketChannel.open(ProtocolFamily)`, `UnixDomainSocketAddress` or `ProcessHandle` directly: bytecode
-  downgraders replace those call sites with stubs that fail. Use reflection as `Bus.openUnix` does.
+- Do not call `SocketChannel.open(ProtocolFamily)` or `UnixDomainSocketAddress` directly, and do not use
+  `ProcessHandle` at all in published modules: bytecode downgraders replace those call sites with stubs that fail.
+  Use reflection as `Bus.openUnix` does.
 - Do not add a second native method to `Bridge` without registering it in `JNI_OnLoad`, and bump the ABI number on
   both sides when the blob layout changes.
 - Do not log titles or application ids outside the debug sink.

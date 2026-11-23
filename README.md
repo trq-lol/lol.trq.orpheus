@@ -155,6 +155,9 @@ they report cannot be trusted: browsers label everything as music.
 - No network access, no telemetry, no files written except the extracted native code, and no track data in logs
   unless you install a debug sink.
 - What cannot be told apart: a music video from a song in a browser, and a private window from a normal one.
+- On Linux a player names its cover as a file path. The library reads that file only if it is a regular file that
+  starts like an image, up to 16 MiB, and hands the picture to your program as the cover. A program on the session
+  bus that poses as a player can therefore make an image file of the user show up as a cover.
 
 ## Limitations
 

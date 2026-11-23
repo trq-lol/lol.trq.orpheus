@@ -24,6 +24,7 @@ final class Soak {
         Orpheus orpheus = Orpheus.builder()
                 .source(rig.source())
                 .apps(AppRules.none().allow(publisher.appRule()))
+                .coverCacheBytes(Long.parseLong(options.getOrDefault("cache-bytes", Long.toString(32L << 20))))
                 .build();
         orpheus.start();
         long reads = 0;

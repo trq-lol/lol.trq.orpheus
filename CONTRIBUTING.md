@@ -15,5 +15,5 @@
 - A change to a hot path (snapshot read, progress, lyric lookup) comes with a `./gradlew :core:jmh` run before and
   after, and updated numbers in `BENCHMARKS.md` if they moved.
 - Classes may be relocated, obfuscated and downgraded by consumers: no `ServiceLoader`, no reflection on the
-  library's own names, Unix sockets and `ProcessHandle` only through reflection. See
+  library's own names, Unix sockets only through reflection and no `ProcessHandle`. See
   [docs/platforms.md](docs/platforms.md#transforming-the-jars).

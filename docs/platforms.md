@@ -19,7 +19,9 @@ What each operating system gives the library, what it cannot give, and how the n
 | Volume | No | Yes | No |
 | Native code | A Rust library in the jar | None | A helper script and framework in the jar |
 
-A control is offered only while the player says it accepts it (`Playback.can`). Commands never throw.
+On Windows and Linux a control is offered only while the player says it accepts it (`Playback.can`); stop is
+always offered on Linux, where players have no flag for it. The macOS helper reports no such flags, so the fixed
+set above is offered there. Commands never throw.
 
 ## Application ids
 
@@ -62,13 +64,13 @@ stops it with the source. Commands are sent by short-lived child processes.
 Programs that embed the library often relocate its packages, obfuscate it, or downgrade its bytecode. The library is
 written to survive that without configuration:
 
-- Nothing is looked up by class name: no `ServiceLoader`, no reflection on its own classes.
+- Nothing is looked up by class name: no `ServiceLoader`, no `Class.forName` on its own classes.
 - The Windows native method is bound at load time to whatever the class and method are called after renaming. No
   keep rules are needed.
 - Resource paths (`orpheus-native/...`) and the handshake property do not look like package names, so relocation
   does not rewrite them. Do not exclude those resources.
-- Unix sockets and `ProcessHandle` are reached through reflection, because bytecode downgraders replace direct uses
-  with stubs that fail even on a modern JVM. On a Java version without Unix sockets (before 16) the Linux source
+- Unix sockets are reached through reflection and `ProcessHandle` is not used, because bytecode downgraders replace
+  direct uses with stubs that fail even on a modern JVM. On a Java version without Unix sockets (before 16) the Linux source
   reports `UNAVAILABLE`.
 
 `./gradlew :harness:compat` runs the jars after repackaging, obfuscation and a downgrade to Java 8 bytecode.
