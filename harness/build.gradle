@@ -5,11 +5,19 @@ plugins {
     id 'application'
 }
 
+configurations {
+    proguard
+    downgrader
+}
+
 dependencies {
     implementation project(':core')
     implementation project(':linux')
     implementation project(':windows')
     implementation project(':macos')
+    implementation project(':system')
+    proguard 'com.guardsquare:proguard-base:7.7.0'
+    downgrader 'xyz.wagyourtail.jvmdowngrader:jvmdowngrader:2.0.1:all'
 }
 
 application {
@@ -19,4 +27,83 @@ application {
 
 tasks.named('run') {
     workingDir = rootProject.projectDir
+}
+
+// ---- compat: run the library after it was repackaged, obfuscated and downgraded to Java 8 bytecode.
+
+def compatDir = layout.buildDirectory.dir('compat')
+
+def compatJar = tasks.register('compatJar', Jar) {
+    archiveFileName = 'plain.jar'
+    destinationDirectory = compatDir
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    dependsOn configurations.runtimeClasspath
+    inputs.files(configurations.runtimeClasspath)
+    from sourceSets.main.output
+    from { configurations.runtimeClasspath.collect { zipTree(it) } }
+    exclude 'META-INF/MANIFEST.MF'
+}
+
+def compatObfuscate = tasks.register('compatObfuscate', JavaExec) {
+    dependsOn compatJar
+    def jmods = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+            .map { it.metadata.installationPath.dir('jmods').asFile.path.replace(File.separator, '/') }
+    def input = compatDir.map { it.file('plain.jar').asFile.path }
+    def output = compatDir.map { it.file('obfuscated.jar').asFile.path }
+    inputs.file(input)
+    outputs.file(output)
+    classpath = configurations.proguard
+    mainClass = 'proguard.ProGuard'
+    argumentProviders.add({
+        [
+            '-injars', input.get(),
+            '-outjars', output.get(),
+            '-libraryjars', "${jmods.get()}/java.base.jmod(!**.jar;!module-info.class)",
+            '-libraryjars', "${jmods.get()}/java.desktop.jmod(!**.jar;!module-info.class)",
+            '-keep', 'public class lol.trq.orpheus.harness.Smoke { public static void main(java.lang.String[]); }',
+            '-repackageclasses', 'zz',
+            '-allowaccessmodification',
+            '-dontwarn',
+            '-dontnote',
+        ]
+    } as CommandLineArgumentProvider)
+}
+
+def compatDowngrade = tasks.register('compatDowngrade', JavaExec) {
+    dependsOn compatObfuscate
+    def input = compatDir.map { it.file('obfuscated.jar').asFile.path }
+    def output = compatDir.map { it.file('downgraded.jar').asFile.path }
+    inputs.file(input)
+    outputs.file(output)
+    classpath = configurations.downgrader
+    workingDir = compatDir
+    mainClass = 'xyz.wagyourtail.jvmdg.cli.Main'
+    argumentProviders.add({ ['-c', '52', 'downgrade', '--target', input.get(), output.get()] } as CommandLineArgumentProvider)
+}
+
+def compatShade = tasks.register('compatShade', JavaExec) {
+    dependsOn compatDowngrade
+    def input = compatDir.map { it.file('downgraded.jar').asFile.path }
+    def output = compatDir.map { it.file('final.jar').asFile.path }
+    inputs.file(input)
+    outputs.file(output)
+    classpath = configurations.downgrader
+    workingDir = compatDir
+    mainClass = 'xyz.wagyourtail.jvmdg.cli.Main'
+    argumentProviders.add({ ['shade', '--prefix', 'compat', '--target', input.get(), output.get()] } as CommandLineArgumentProvider)
+}
+
+def compatRuns = [8, 17, 25].collect { java ->
+    tasks.register("compatRun${java}", JavaExec) {
+        dependsOn compatShade
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(java) }
+        classpath = files(compatDir.map { it.file('final.jar') })
+        mainClass = 'lol.trq.orpheus.harness.Smoke'
+        outputs.upToDateWhen { false }
+    }
+}
+
+tasks.register('compat') {
+    description = 'Runs the repackaged, obfuscated and downgraded jars on Java 8, 17 and 25.'
+    dependsOn compatRuns
 }
