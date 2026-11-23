@@ -17,7 +17,7 @@ music service, nothing touches the network, and unsupported operations answer "u
 | | |
 |---|---|
 | Java | 17 or newer. No dependencies. |
-| Windows | 10 version 1809 or newer, or 11, 64-bit. Uses a small native library bundled in the jar. |
+| Windows | 10 version 1809 or newer, or 11, x64. Uses a small native library bundled in the jar. |
 | Linux | A session bus with MPRIS players. Pure Java. |
 | macOS | Experimental. Uses a bundled helper process; see [docs/platforms.md](docs/platforms.md). |
 

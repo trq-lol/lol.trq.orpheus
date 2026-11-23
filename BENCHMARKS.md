@@ -132,7 +132,7 @@ with the test publisher. No real player was tried.
 | controls | FAIL: a shuffle change was not reflected |
 | unsupported controls | FAIL: a withdrawn control stayed offered; the helper does not report control flags |
 
-On a Mac with an M2 and macOS 26.5 (Java 25, 2026-11-23, commit 64168b3) the same 10 of 14 pass: progress 532 ms off while
+On a Mac with an M2 and macOS 26.5 (Java 25, 2026-11-23) the same 10 of 14 pass: progress 532 ms off while
 playing and 1.6 ms after a seek, lyric lines 524 ms off, track changes median 3.5 ms and worst 5.2 ms, cover 5.9 ms.
 
 - Progress and lyrics: in tests on that Mac, an update of the now playing data that followed the previous one within

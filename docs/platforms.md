@@ -10,10 +10,10 @@ What each operating system gives the library, what it cannot give, and how the n
 | Interface | Media sessions (Windows 10 1809+) | MPRIS on the session bus | Now Playing, through a helper |
 | Sessions | One per application | One per player | Only the application the system elected |
 | Updates | Events | Events; position read on change and every 5 s while playing | Events from the helper |
-| Text, length, cover | Yes; cover as image bytes | Yes; cover from `file:` and `data:` uris, others passed on as a uri | Yes |
+| Text, length, cover | Yes; cover as image bytes | Yes; cover from `file:` and `data:` uris, `http` and `https` passed on as an unchecked uri | Yes |
 | Media kind | Reported, but browsers always say music | Not reported | A weak hint |
 | Play, pause, toggle, stop, next, previous, seek | Yes | Yes, as the player allows | Yes |
-| Shuffle, repeat | Yes | Yes | Yes |
+| Shuffle, repeat | Yes | Yes | Commands only; the state is not seen |
 | Rate | Yes | Yes | No |
 | Fast-forward, rewind | Yes | No | No |
 | Volume | No | Yes | No |
