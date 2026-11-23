@@ -1,0 +1,32 @@
+---
+title: Orpheus
+---
+{% capture readme %}{% include_relative README.md %}{% endcapture %}
+{% assign intro = readme | split: "## Requirements" | first | split: "
+
+" %}
+{% assign requirements = readme | split: "## Requirements" | last | split: "## Install" | first | replace: "](docs/", "](/docs/" | replace: ".md)", ".html)" %}
+{% assign usage = readme | split: "## Usage" | last | split: "```java" | slice: 1, 1 | first | split: "```" | first %}
+{% assign paras = "" | split: "" %}{% for p in intro %}{% assign c = p | strip | slice: 0, 1 %}{% if c != "#" and c != "[" and c != "" %}{% assign paras = paras | push: p %}{% endif %}{% endfor %}
+<p class="lede">{{ paras[0] | markdownify | strip_html | strip }}</p>
+{{ paras[1] | replace: ".md)", ".html)" | markdownify }}
+
+<div class="actions">
+  <a class="button" href="{{ '/api/' | relative_url }}">API reference</a>
+  <a class="button-quiet" href="{{ '/docs/platforms.html' | relative_url }}">Platforms</a>
+  <a class="button-quiet" href="{{ site.repo }}">Source on GitHub</a>
+</div>
+
+<h2>Requirements</h2>
+{{ requirements | markdownify }}
+
+<h2>Usage</h2>
+{% highlight java %}{{ usage | strip }}{% endhighlight %}
+<p>More examples (events, controls, synced lyrics, pushing your own player in) and the privacy rules are in the <a href="{{ site.repo }}#usage">README</a>.</p>
+
+<h2>Links</h2>
+<ul>
+  <li><a href="{{ '/docs/platforms.html' | relative_url }}">Platforms</a>: what each system provides and how native code is handled</li>
+  <li><a href="{{ '/api/' | relative_url }}">Javadoc</a> for <code>lol.trq.orpheus</code></li>
+  <li><a href="{{ '/docs/harness.html' | relative_url }}">The live harness</a>, <a href="{{ '/BENCHMARKS.html' | relative_url }}">benchmarks</a> and the <a href="{{ '/CHANGELOG.html' | relative_url }}">changelog</a></li>
+</ul>

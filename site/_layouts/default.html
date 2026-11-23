@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    {% if page.title and page.url != '/' %}
+      {% assign page_title = page.title | append: " · " | append: site.title %}
+    {% else %}
+      {% assign page_title = site.title %}
+    {% endif %}
+    {% assign page_description = page.description | default: site.description %}
+    <title>{{ page_title }}</title>
+    <meta name="description" content="{{ page_description }}" />
+    <link rel="canonical" href="{{ page.url | absolute_url }}" />
+    <link rel="icon" href="{{ '/assets/favicon.svg' | relative_url }}" type="image/svg+xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="{{ site.title }}" />
+    <meta property="og:title" content="{{ page_title }}" />
+    <meta property="og:description" content="{{ page_description }}" />
+    <meta property="og:url" content="{{ page.url | absolute_url }}" />
+    <meta name="twitter:card" content="summary" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}?v={{ site.github.build_revision | default: site.time | date: '%s' }}" />
+
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-head">
+      <a class="wordmark" href="{{ '/' | relative_url }}">{{ site.wordmark }}</a>
+      <p class="tagline">{{ site.tagline }}</p>
+      <nav class="nav" aria-label="Primary">
+        {% for item in site.nav %}
+          {% if item.url contains '://' %}
+            <a href="{{ item.url }}">{{ item.title }}</a>
+          {% else %}
+            <a href="{{ item.url | relative_url }}"{% if page.url == item.url %} aria-current="page"{% endif %}>{{ item.title }}</a>
+          {% endif %}
+        {% endfor %}
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch theme" title="Switch theme">◐</button>
+      </nav>
+    </header>
+
+    <main id="main" class="prose">
+      {{ content }}
+    </main>
+
+    <footer class="site-foot">
+      <span>{{ site.license }}</span>
+      <span class="sep" aria-hidden="true">/</span>
+      <a href="{{ site.repo }}/releases">Releases</a>
+      <span class="sep" aria-hidden="true">/</span>
+      <a href="{{ site.repo }}">{{ site.repo | remove: 'https://github.com/' }}</a>
+      <span class="sep" aria-hidden="true">/</span>
+      <a href="https://trq.lol">trq.lol</a>
+    </footer>
+
+    <script>
+      (function () {
+        var btn = document.getElementById('theme-toggle');
+        if (!btn) return;
+        var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+        function effective() {
+          var a = document.documentElement.getAttribute('data-theme');
+          if (a === 'dark' || a === 'light') return a;
+          return mq && mq.matches ? 'dark' : 'light';
+        }
+        function sync() {
+          var dark = effective() === 'dark';
+          btn.setAttribute('aria-pressed', String(dark));
+          btn.title = dark ? 'Switch to light' : 'Switch to dark';
+          btn.setAttribute('aria-label', btn.title);
+        }
+        btn.addEventListener('click', function () {
+          var next = effective() === 'dark' ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-theme', next);
+          try {
+            localStorage.setItem('theme', next);
+          } catch (e) {}
+          sync();
+        });
+        if (mq && mq.addEventListener) mq.addEventListener('change', sync);
+        sync();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,35 @@
+title: Orpheus
+description: "A music library for Java: what is playing, playback controls and synced lyrics, from any source."
+url: https://orpheus.trq.lol
+baseurl: ""
+wordmark: orpheus
+tagline: "A music library for Java: what is playing, controls and synced lyrics, from any source."
+license: MIT
+repo: https://github.com/trq-lol/lol.trq.orpheus
+nav:
+  - { title: Platforms, url: /docs/platforms.html }
+  - { title: Harness, url: /docs/harness.html }
+  - { title: Benchmarks, url: /BENCHMARKS.html }
+  - { title: Changelog, url: /CHANGELOG.html }
+  - { title: API, url: /api/ }
+  - { title: llms.txt, url: /llms.txt }
+  - { title: GitHub, url: "https://github.com/trq-lol/lol.trq.orpheus" }
+defaults:
+  - scope: { path: "" }
+    values: { layout: default }
+exclude:
+  - CLAUDE.md
+  - README.md
+  - build
+  - core
+  - gradle
+  - harness
+  - linux
+  - macos
+  - native
+  - system
+  - windows
+  - "*.gradle"
+  - gradle.properties
+  - gradlew
+  - gradlew.bat
