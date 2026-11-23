@@ -79,6 +79,9 @@ unsafe extern "system" fn call(
 unsafe fn bind(env: *mut JNIEnv) -> Option<()> {
     unsafe {
         let system = env!(env, FindClass, c"java/lang/System".as_ptr());
+        if system.is_null() {
+            return None;
+        }
         let get = env!(
             env,
             GetStaticMethodID,
@@ -86,7 +89,7 @@ unsafe fn bind(env: *mut JNIEnv) -> Option<()> {
             c"getProperty".as_ptr(),
             c"(Ljava/lang/String;)Ljava/lang/String;".as_ptr()
         );
-        if system.is_null() || get.is_null() {
+        if get.is_null() {
             return None;
         }
         let key = env!(env, NewStringUTF, HANDSHAKE_PROPERTY.as_ptr());

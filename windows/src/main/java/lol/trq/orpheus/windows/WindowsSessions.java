@@ -105,10 +105,12 @@ public final class WindowsSessions implements Source, Transport {
     }
 
     private void failPending(String reason) {
-        for (CompletableFuture<ControlResult> future : pending.values()) {
-            future.complete(ControlResult.failed(reason));
+        for (Long request : pending.keySet()) {
+            CompletableFuture<ControlResult> future = pending.remove(request);
+            if (future != null) {
+                future.complete(ControlResult.failed(reason));
+            }
         }
-        pending.clear();
     }
 
     private void run(SourceSink sink) {

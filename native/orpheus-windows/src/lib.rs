@@ -123,6 +123,9 @@ pub fn open() -> u64 {
             }
         })
         .ok();
+    if worker.is_none() {
+        shared.publish(wire::status(false, "the media session worker thread could not be started"));
+    }
     let handle = NEXT.fetch_add(1, Ordering::Relaxed);
     table().lock().unwrap().insert(handle, Arc::new(Instance { shared, worker: Mutex::new(worker) }));
     handle
@@ -140,12 +143,13 @@ pub fn await_blob(handle: u64, timeout: Duration) -> Option<Vec<u8>> {
         }
         if outbox.sessions.is_some() || !outbox.queued.is_empty() {
             let mut blob = Vec::new();
+            // Thumbnails first: the sessions record refers to them by key.
+            while let Some(record) = outbox.queued.pop_front() {
+                blob.extend(record);
+            }
             if let Some((sessions, built)) = outbox.sessions.take() {
                 wire::age(&mut blob, built.elapsed());
                 blob.extend(sessions);
-            }
-            while let Some(record) = outbox.queued.pop_front() {
-                blob.extend(record);
             }
             return Some(blob);
         }

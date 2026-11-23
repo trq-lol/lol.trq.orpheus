@@ -73,6 +73,31 @@ class BlobTest {
     }
 
     @Test
+    void theOrderOfControlsIsPartOfTheNativeContract() {
+        // The native side sends the supported controls as bits and receives a command as a number, both by
+        // position in this list. Reordering the enum needs a matching change and a new ABI number there.
+        assertEquals(
+                List.of(
+                        "PLAY",
+                        "PAUSE",
+                        "TOGGLE",
+                        "STOP",
+                        "NEXT",
+                        "PREVIOUS",
+                        "SEEK",
+                        "FAST_FORWARD",
+                        "REWIND",
+                        "SHUFFLE",
+                        "REPEAT",
+                        "RATE",
+                        "VOLUME",
+                        "MUTE"),
+                java.util.Arrays.stream(lol.trq.orpheus.Control.values())
+                        .map(Enum::name)
+                        .toList());
+    }
+
+    @Test
     void readsEveryRecordInOrder() {
         Seen seen = new Seen();
         Blob.read(blob(), seen);
@@ -99,7 +124,11 @@ class BlobTest {
         for (int cut = 0; cut < whole.length; cut++) {
             Seen seen = new Seen();
             Blob.read(Arrays.copyOf(whole, cut), seen);
-            assertTrue(seen.records.size() <= 4);
+            assertEquals(
+                    List.of("status true ", "thumbnail 77", "sessions 1 age 1234", "result 5 1 no")
+                            .subList(0, seen.records.size()),
+                    seen.records,
+                    "cut at " + cut);
         }
         ByteBuffer huge = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN);
         huge.put((byte) Blob.KIND_SESSIONS).putInt(Integer.MAX_VALUE);

@@ -27,7 +27,6 @@ final class Bridge {
     private static final String FILE = "orpheus.dll";
 
     private static boolean loaded;
-    private static String failure;
 
     private Bridge() {}
 
@@ -43,10 +42,12 @@ final class Bridge {
      * @return null when it is ready, otherwise the reason it cannot be used
      */
     static synchronized String load() {
-        if (!loaded && failure == null) {
-            failure = tryLoad();
-            loaded = failure == null;
+        if (loaded) {
+            return null;
         }
+        // a failure is not remembered: a full disk or a locked file may be gone by the next start
+        String failure = tryLoad();
+        loaded = failure == null;
         return failure;
     }
 

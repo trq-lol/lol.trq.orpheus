@@ -359,12 +359,16 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
             {
                 relist = false;
                 relist_pending = false;
-                last_relist = Some(Instant::now());
                 let listed = match manager.GetSessions() {
                     Ok(listed) => listed,
                     Err(error) if error.code() == E_ABORT => break Err(error),
                     Err(_) => {
                         relist_pending = true;
+                        last_relist = Some(Instant::now());
+                        for command in commands {
+                            let reason = "the media session service did not answer";
+                            shared.publish(wire::result(command.request, wire::RESULT_FAILED, reason));
+                        }
                         continue;
                     }
                 };
@@ -416,6 +420,8 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
                     gone.release();
                 }
                 sessions = kept;
+                // Stamped after the work: a listing that took seconds must not make the next retry due at once.
+                last_relist = Some(Instant::now());
             }
         }
 
