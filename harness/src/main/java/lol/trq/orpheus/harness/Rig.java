@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import lol.trq.orpheus.linux.MprisSource;
+import lol.trq.orpheus.macos.MacNowPlaying;
 import lol.trq.orpheus.source.Source;
 import lol.trq.orpheus.windows.WindowsSessions;
 
@@ -25,6 +26,9 @@ abstract class Rig {
             "repeat",
             "rate",
             "stop");
+
+    static final List<String> MACOS_COMMANDS =
+            List.of("pause", "play", "toggle", "next", "previous", "seek", "shuffle", "repeat", "stop");
 
     abstract String name();
 
@@ -87,6 +91,35 @@ abstract class Rig {
                 @Override
                 boolean reportsKind() {
                     return false;
+                }
+            };
+        }
+        if (os.startsWith("mac")) {
+            Path executable =
+                    publisherPath != null ? publisherPath : Path.of("native/publisher-macos/orpheus-publisher");
+            return new Rig() {
+                @Override
+                String name() {
+                    return "macos";
+                }
+
+                @Override
+                Source source() {
+                    return MacNowPlaying.create();
+                }
+
+                @Override
+                Publisher publisher() throws Exception {
+                    if (!Files.isRegularFile(executable)) {
+                        throw new IOException(
+                                "publisher not found at " + executable.toAbsolutePath() + "; build it with build.sh");
+                    }
+                    return new ProcessPublisher(executable, "orpheus.test.publisher", MACOS_COMMANDS);
+                }
+
+                @Override
+                boolean reportsKind() {
+                    return true;
                 }
             };
         }

@@ -6,3 +6,6 @@ target/
 *.iml
 .vscode/
 .DS_Store
+native/dist/
+native/macos/build/
+native/publisher-macos/orpheus-publisher
