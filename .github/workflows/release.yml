@@ -19,6 +19,16 @@ jobs:
         run: |
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]
           test "$GITHUB_REF" = "refs/tags/v$VERSION"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Refuse a version without release notes
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          version=$VERSION
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md
 
   windows-native:
     needs: check
@@ -94,5 +104,4 @@ jobs:
           done
           (cd out && for jar in *.jar; do sha256sum "$jar" > "$jar.sha256"; done)
           awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' CHANGELOG.md > notes.md
-          test -s notes.md
           gh release create "v$version" --title "lol.trq.orpheus $version" --notes-file notes.md out/*
