@@ -36,6 +36,8 @@ jobs:
           sh native/macos/build-adapter.sh
           sh native/publisher-macos/build.sh
       - run: ./gradlew :core:build :macos:build :system:build :harness:installDist
+      - name: Diagnose Now Playing on this runner
+        run: sh native/macos/diagnose.sh
       - name: Live harness against Now Playing
         id: live
         continue-on-error: true
