@@ -59,7 +59,6 @@ public final class MacNowPlaying implements Source, Transport {
     private static final String FRAMEWORK = "MediaRemoteAdapter.framework";
     private static final int MAX_LINE_CHARS = 48 << 20;
     private static final int MAX_FAILURES = 5;
-    private static final long COMMAND_TIMEOUT_MILLIS = 3000;
     private static final long MICROS_PER_DAY = 86_400_000_000L;
 
     private final Function<List<String>, List<String>> commandLine;
@@ -73,6 +72,7 @@ public final class MacNowPlaying implements Source, Transport {
     private boolean stopping;
     private volatile String sessionId = "";
     private volatile List<String> prefix;
+    long commandTimeoutMillis = 3000;
 
     private MacNowPlaying(Path adapterDirectory, Function<List<String>, List<String>> commandLine) {
         this.adapterDirectory = adapterDirectory;
@@ -545,7 +545,7 @@ public final class MacNowPlaying implements Source, Transport {
             Thread drain = new Thread(() -> drain(running.getInputStream(), output), "orpheus-macos-errors");
             drain.setDaemon(true);
             drain.start();
-            if (!process.waitFor(COMMAND_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+            if (!process.waitFor(commandTimeoutMillis, TimeUnit.MILLISECONDS)) {
                 return ControlResult.failed("the helper did not answer");
             }
             drain.join(500);

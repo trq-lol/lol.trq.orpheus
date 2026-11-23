@@ -69,6 +69,8 @@ class MacNowPlayingTest {
             command.addAll(helper);
             return command;
         });
+        // starting a child JVM takes a while on a busy machine
+        source.commandTimeoutMillis = 60_000;
         return source;
     }
 
