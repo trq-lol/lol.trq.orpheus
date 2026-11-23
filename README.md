@@ -140,7 +140,11 @@ mine.publish(PlaybackUpdate.playing(track).position(Duration.ofSeconds(12)));
 orpheus.pin(mine.id());   // show only this source; orpheus.unpin() returns to choosing automatically
 ```
 
-When several sessions exist, the playing one is chosen; a short pause does not flip the display to another player.
+Automatic choice: something playing beats something paused, and between equals the source added first wins. With
+the system first, a second source (a service, your own player) is shown only while the system has nothing
+playing, and the system takes over again the moment it plays. A short pause does not flip the display.
+`orpheus.pin(id)` is the manual choice (only the system, only one service); `orpheus.sources()` lists the ids
+with their status for a picker.
 Two sources that describe the same song are merged, and two different songs are never mixed.
 
 ## Privacy

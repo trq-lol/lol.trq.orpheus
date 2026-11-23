@@ -27,6 +27,7 @@ import lol.trq.orpheus.cover.CoverCache;
 import lol.trq.orpheus.cover.CoverDecoder;
 import lol.trq.orpheus.event.OrpheusEvent;
 import lol.trq.orpheus.event.SessionsChanged;
+import lol.trq.orpheus.event.SourceStatusChanged;
 import lol.trq.orpheus.internal.Engine;
 import lol.trq.orpheus.lyrics.Lyrics;
 import lol.trq.orpheus.lyrics.LyricsMatch;
@@ -63,6 +64,7 @@ public final class Orpheus implements AutoCloseable {
 
     private volatile Snapshot snapshot = Snapshot.NONE;
     private volatile List<SessionInfo> sessions = List.of();
+    private volatile List<SourceInfo> sourceInfos = List.of();
     private volatile Run run;
     private Run last;
     private volatile AppRules rules;
@@ -129,6 +131,7 @@ public final class Orpheus implements AutoCloseable {
             ending.end();
             snapshot = Snapshot.NONE;
             sessions = List.of();
+            sourceInfos = List.of();
         }
     }
 
@@ -160,6 +163,22 @@ public final class Orpheus implements AutoCloseable {
         return sessions;
     }
 
+    /**
+     * The configured sources in priority order, each with its status. Before {@link #start()} every source is
+     * listed as starting.
+     */
+    public List<SourceInfo> sources() {
+        List<SourceInfo> current = sourceInfos;
+        if (current.isEmpty()) {
+            List<SourceInfo> idle = new ArrayList<>();
+            for (Source source : sources) {
+                idle.add(new SourceInfo(source.id(), SourceStatus.STARTING, 0));
+            }
+            return idle;
+        }
+        return current;
+    }
+
     /** Registers a listener for every event. */
     public Subscription listen(Consumer<? super OrpheusEvent> listener) {
         listeners.add(listener);
@@ -188,7 +207,10 @@ public final class Orpheus implements AutoCloseable {
         return new Library(this);
     }
 
-    /** Shows only sessions of one source; among them the usual automatic choice applies. */
+    /**
+     * Manual choice: shows only sessions of one source, for example only the operating system or only one
+     * service. Among its sessions the usual automatic choice applies. See {@link #sources()} for the ids.
+     */
     public void pin(String sourceId) {
         pin(sourceId, null);
     }
@@ -200,7 +222,11 @@ public final class Orpheus implements AutoCloseable {
         onHub(r -> r.engine.pin(sourceId, appId));
     }
 
-    /** Returns to choosing automatically among all visible sessions. */
+    /**
+     * Returns to the automatic choice: something playing beats something paused, and between equals the source
+     * added to the builder first wins. So with the operating system first, a service is only shown while the
+     * system has nothing playing.
+     */
     public void unpin() {
         pin(null, null);
     }
@@ -504,6 +530,9 @@ public final class Orpheus implements AutoCloseable {
             if (event instanceof SessionsChanged changed) {
                 sessions = changed.sessions();
             }
+            if (event instanceof SessionsChanged || event instanceof SourceStatusChanged) {
+                sourceInfos = List.copyOf(engine.sourceInfos());
+            }
             if (listeners.isEmpty()) {
                 return;
             }
@@ -593,7 +622,10 @@ public final class Orpheus implements AutoCloseable {
 
         private Builder() {}
 
-        /** Adds a source. Earlier sources win when two describe the same song. */
+        /**
+         * Adds a source. Order is priority: an earlier source is chosen over a later one in the same play state,
+         * and wins when two describe the same song.
+         */
         public Builder source(Source source) {
             sources.add(source);
             return this;

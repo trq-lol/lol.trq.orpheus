@@ -9,6 +9,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `Orpheus`: a hub that collects sessions from sources, selects one, and offers it as an immutable `Snapshot`, as
   events and through `Controls`. Reads allocate nothing; unsupported commands complete `UNSUPPORTED`.
+- Automatic selection in source order (the first source that has something playing wins), `pin` for a manual
+  choice and `sources()` to list them.
 - `PushSource` for a program's own player, with handlers per control and optional queue, device and library
   abilities.
 - `AppRules`: which applications of operating system sources are visible. The default is an allow list of dedicated

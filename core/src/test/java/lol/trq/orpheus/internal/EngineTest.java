@@ -144,6 +144,46 @@ class EngineTest {
     }
 
     @Test
+    void automaticChoiceFollowsTheOrderOfTheSources() {
+        Engine engine = engine(AppRules.all());
+        engine.sessions(1, List.of(session("api").track("From Service", "X").build()));
+        assertEquals("service", engine.snapshot().playback().sourceId(), "nothing on the first source: use the next");
+
+        now += SECOND;
+        engine.sessions(
+                0,
+                List.of(session("os1")
+                        .track("From System", "Y")
+                        .state(PlaybackState.PAUSED)
+                        .build()));
+        assertEquals(
+                "service",
+                engine.snapshot().playback().sourceId(),
+                "a paused first source does not beat a playing one");
+
+        engine.sessions(0, List.of(session("os1").track("From System", "Y").build()));
+        assertEquals("os", engine.snapshot().playback().sourceId(), "the first source takes over the moment it plays");
+
+        now += 10 * SECOND;
+        engine.sessions(1, List.of(session("api").track("Newer", "X").build()));
+        assertEquals("os", engine.snapshot().playback().sourceId(), "a newer change on a later source does not win");
+
+        engine.sessions(0, List.of());
+        assertEquals("service", engine.snapshot().playback().sourceId());
+        engine.sessions(1, List.of());
+        engine.sessions(0, List.of(session("os1").state(PlaybackState.PAUSED).build()));
+        engine.sessions(1, List.of(session("api").state(PlaybackState.PAUSED).build()));
+        assertEquals("os", engine.snapshot().playback().sourceId(), "both paused: the first source");
+
+        engine.pin("service", null);
+        assertEquals("service", engine.snapshot().playback().sourceId(), "a manual choice overrides the order");
+        assertEquals(
+                List.of("os", "service"),
+                engine.sourceInfos().stream().map(i -> i.id()).toList());
+        assertEquals(1, engine.sourceInfos().get(1).sessions());
+    }
+
+    @Test
     void aVanishedSelectionIsReplacedAtOnce() {
         Engine engine = engine(AppRules.all());
         engine.sessions(

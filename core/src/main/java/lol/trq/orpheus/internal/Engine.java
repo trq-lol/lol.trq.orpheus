@@ -19,6 +19,7 @@ import lol.trq.orpheus.Repeat;
 import lol.trq.orpheus.SessionInfo;
 import lol.trq.orpheus.Shuffle;
 import lol.trq.orpheus.Snapshot;
+import lol.trq.orpheus.SourceInfo;
 import lol.trq.orpheus.Timeline;
 import lol.trq.orpheus.Track;
 import lol.trq.orpheus.cover.Cover;
@@ -79,6 +80,7 @@ public final class Engine {
     private final Map<Control, Target> routes = new HashMap<>();
     private final Map<String, Long> offsets = new LinkedHashMap<>(16, 0.75f, true);
     private final List<Map<String, String>> keys = new ArrayList<>();
+    private final List<SourceStatus> statuses = new ArrayList<>();
     private final Map<String, Boolean> visibility = new HashMap<>();
     private final Map<String, Boolean> videoVisibility = new HashMap<>();
 
@@ -112,11 +114,22 @@ public final class Engine {
         for (int i = 0; i < sources.size(); i++) {
             bySource.add(List.of());
             keys.add(new HashMap<>());
+            statuses.add(SourceStatus.STARTING);
         }
     }
 
     public Snapshot snapshot() {
         return snapshot;
+    }
+
+    /** Every source in builder order with its latest status. */
+    public List<SourceInfo> sourceInfos() {
+        List<SourceInfo> out = new ArrayList<>();
+        for (int i = 0; i < sources.size(); i++) {
+            out.add(new SourceInfo(
+                    sources.get(i).id(), statuses.get(i), bySource.get(i).size()));
+        }
+        return out;
     }
 
     public List<SessionInfo> sessions() {
@@ -136,6 +149,7 @@ public final class Engine {
             bySource.set(source, List.of());
             refresh();
         }
+        statuses.set(source, status);
         host.emit(new SourceStatusChanged(snapshot, sources.get(source).id(), status));
     }
 
@@ -329,8 +343,15 @@ public final class Engine {
                 best = entry;
             }
         }
-        if (current == null || best == current || rank(current) == 3 || rank(best) < 3) {
-            return current == null ? best : current;
+        if (current == null || best == current) {
+            return best;
+        }
+        if (rank(best) == 3 && best.source() < current.source()) {
+            // a source earlier in the builder order started playing: it takes over at once
+            return best;
+        }
+        if (rank(current) == 3 || rank(best) < 3) {
+            return current;
         }
         long switchAt = changedAt.get(current.key()) + STICKY_NANOS;
         if (now - switchAt >= 0) {
@@ -353,8 +374,10 @@ public final class Engine {
         if (rank(a) != rank(b)) {
             return rank(a) > rank(b);
         }
-        long diff = changedAt.get(a.key()) - changedAt.get(b.key());
-        return diff != 0 ? diff > 0 : a.source() < b.source();
+        if (a.source() != b.source()) {
+            return a.source() < b.source();
+        }
+        return changedAt.get(a.key()) - changedAt.get(b.key()) > 0;
     }
 
     private static int rank(Entry entry) {
