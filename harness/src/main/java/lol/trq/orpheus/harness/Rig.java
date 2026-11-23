@@ -114,7 +114,7 @@ abstract class Rig {
                         throw new IOException(
                                 "publisher not found at " + executable.toAbsolutePath() + "; build it with build.sh");
                     }
-                    return new ProcessPublisher(executable, "orpheus.test.publisher", MACOS_COMMANDS);
+                    return new ProcessPublisher(executable, "publisher", MACOS_COMMANDS);
                 }
 
                 @Override

@@ -59,6 +59,9 @@ public final class MacNowPlaying implements Source, Transport {
     private static final String FRAMEWORK = "MediaRemoteAdapter.framework";
     private static final int MAX_LINE_CHARS = 48 << 20;
     private static final int MAX_FAILURES = 5;
+    /** Key under which the process name is kept in the held state; never sent by the helper. */
+    static final String PROCESS_NAME = "orpheus.processName";
+
     private static final long MICROS_PER_DAY = 86_400_000_000L;
 
     private final Function<List<String>, List<String>> commandLine;
@@ -71,6 +74,8 @@ public final class MacNowPlaying implements Source, Transport {
     private Thread hook;
     private boolean stopping;
     private volatile String sessionId = "";
+    private long namedPid;
+    private String processName = "";
     private volatile List<String> prefix;
     long commandTimeoutMillis = 3000;
 
@@ -394,6 +399,18 @@ public final class MacNowPlaying implements Source, Transport {
     }
 
     private List<SessionUpdate> sessions(Map<String, Object> state, CoverCache cover) {
+        if (!state.isEmpty() && appOf(state).isEmpty()) {
+            long pid = micros(state.get("processIdentifier"));
+            if (pid != namedPid) {
+                namedPid = pid;
+                processName = pid > 0 ? processName(pid) : "";
+            }
+            if (processName.isEmpty()) {
+                state.remove(PROCESS_NAME);
+            } else {
+                state.put(PROCESS_NAME, processName);
+            }
+        }
         SessionUpdate update = session(state, cover, System.nanoTime(), System.currentTimeMillis());
         sessionId = update == null ? "" : update.sessionId();
         return update == null ? List.of() : List.of(update);
@@ -403,9 +420,9 @@ public final class MacNowPlaying implements Source, Transport {
         if (state.isEmpty()) {
             return null;
         }
-        String app = text(state.get("bundleIdentifier"));
+        String app = appOf(state);
         if (app.isEmpty()) {
-            app = text(state.get("parentApplicationBundleIdentifier"));
+            app = text(state.get(PROCESS_NAME));
         }
         if (app.isEmpty()) {
             app = "unknown";
@@ -471,6 +488,47 @@ public final class MacNowPlaying implements Source, Transport {
                 controls,
                 cover.of(state.get("artworkData")),
                 null);
+    }
+
+    private static String appOf(Map<String, Object> state) {
+        String app = text(state.get("bundleIdentifier"));
+        return app.isEmpty() ? text(state.get("parentApplicationBundleIdentifier")) : app;
+    }
+
+    /** The file name of a process, for players that are not application bundles. Empty when unknown. */
+    private static String processName(long pid) {
+        Process process = null;
+        try {
+            process = new ProcessBuilder("/bin/ps", "-p", Long.toString(pid), "-o", "comm=")
+                    .redirectErrorStream(true)
+                    .start();
+            process.getOutputStream().close();
+            String line;
+            try (BufferedReader in =
+                    new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                line = in.readLine();
+            }
+            if (!process.waitFor(2, TimeUnit.SECONDS) || process.exitValue() != 0 || line == null) {
+                return "";
+            }
+            return nameOf(line);
+        } catch (IOException e) {
+            return "";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
+        } finally {
+            if (process != null) {
+                process.destroyForcibly();
+            }
+        }
+    }
+
+    /** The last path element of a command path, at most 100 characters. */
+    static String nameOf(String command) {
+        String name = command.strip();
+        name = name.substring(name.lastIndexOf('/') + 1);
+        return name.length() > 100 ? name.substring(0, 100) : name;
     }
 
     private static String text(Object value) {

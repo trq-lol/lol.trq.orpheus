@@ -34,4 +34,19 @@ sleep 4
 $adapter get --no-artwork
 echo "exit $?"
 wait
+
+echo "== what the library reports with our publisher playing (needs the harness to be installed)"
+harness=$here/../../harness/build/install/harness/bin/harness
+if [ -x "$harness" ]; then
+    (
+        printf 'track\tDiagnose Title\tDiagnose Artist\tDiagnose Album\t\t60000\t3366CC\tmusic\n'
+        printf 'state\tplaying\n'
+        sleep 10
+    ) | "$publisher" &
+    sleep 2
+    "$harness" watch --all --seconds 5 | cut -c1-400
+    wait
+else
+    echo "no harness at $harness"
+fi
 exit 0

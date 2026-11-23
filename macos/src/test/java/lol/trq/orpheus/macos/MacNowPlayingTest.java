@@ -256,4 +256,17 @@ class MacNowPlayingTest {
     private ControlResult send(ControlRequest request) throws Exception {
         return source.send(request).get(30, TimeUnit.SECONDS);
     }
+
+    @Test
+    void aPlayerWithoutABundleIsNamedAfterItsProcess() {
+        Map<String, Object> state = new HashMap<>();
+        state.put("title", "Example Song");
+        assertEquals("unknown", session(state).app().id());
+        state.put(MacNowPlaying.PROCESS_NAME, MacNowPlaying.nameOf("/opt/tools/bin/example-player\n"));
+        assertEquals("example-player", session(state).app().id());
+        state.put("parentApplicationBundleIdentifier", "org.example.parent");
+        assertEquals("org.example.parent", session(state).app().id());
+        state.put("bundleIdentifier", "org.example.player");
+        assertEquals("org.example.player", session(state).app().id(), "a bundle identifier wins");
+    }
 }
