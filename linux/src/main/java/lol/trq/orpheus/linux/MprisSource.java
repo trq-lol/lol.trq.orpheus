@@ -32,6 +32,7 @@ import lol.trq.orpheus.SourceApp;
 import lol.trq.orpheus.Track;
 import lol.trq.orpheus.cover.CoverDecoder;
 import lol.trq.orpheus.internal.Backoff;
+import lol.trq.orpheus.internal.Text;
 import lol.trq.orpheus.linux.dbus.Bus;
 import lol.trq.orpheus.linux.dbus.BusAddress;
 import lol.trq.orpheus.linux.dbus.Message;
@@ -64,6 +65,16 @@ public final class MprisSource implements Source, Transport {
     private static final long CALL_TIMEOUT_MILLIS = 3000;
     private static final long POSITION_INTERVAL_MILLIS = 5000;
     private static final int MAX_PLAYERS = 64;
+    private static final List<String> METADATA = List.of(
+            "mpris:trackid",
+            "mpris:length",
+            "mpris:artUrl",
+            "xesam:title",
+            "xesam:artist",
+            "xesam:album",
+            "xesam:albumArtist",
+            "xesam:trackNumber",
+            "xesam:url");
     private static final Set<String> KEPT = Set.of(
             "PlaybackStatus",
             "LoopStatus",
@@ -343,7 +354,7 @@ public final class MprisSource implements Source, Transport {
         call(Message.call(name, OBJECT, PROPERTIES, "GetAll", "s", ROOT))
                 .thenAccept(reply -> run(() -> {
                     if (properties(reply).get("Identity") instanceof String identity) {
-                        player.identity = identity;
+                        player.identity = Text.clean(identity);
                         publish();
                     }
                 }));
@@ -370,12 +381,63 @@ public final class MprisSource implements Source, Transport {
         Object before = song(player);
         for (Map.Entry<?, ?> entry : changed.entrySet()) {
             if (entry.getKey() instanceof String name && KEPT.contains(name)) {
-                player.properties.put(name, entry.getValue());
+                Object value = "Metadata".equals(name) ? metadata(entry.getValue()) : simple(entry.getValue());
+                if (value == null) {
+                    player.properties.remove(name);
+                } else {
+                    player.properties.put(name, value);
+                }
             }
         }
         if (changed.containsKey("Metadata") && before != null && !before.equals(song(player))) {
             position(player, 0);
         }
+    }
+
+    /** The metadata that is used, with its text and lists cut to sane sizes. */
+    private static Map<Object, Object> metadata(Object value) {
+        Map<Object, Object> kept = new HashMap<>();
+        if (value instanceof Map<?, ?> all) {
+            for (String name : METADATA) {
+                Object each = all.get(name);
+                if (each instanceof List<?> list) {
+                    each = list.stream()
+                            .limit(64)
+                            .map(MprisSource::simple)
+                            .filter(item -> item != null)
+                            .toList();
+                } else if (!name.equals("mpris:artUrl") || !(each instanceof String)) {
+                    each = simple(each);
+                }
+                if (each != null) {
+                    kept.put(name, each);
+                }
+            }
+        }
+        return kept;
+    }
+
+    private static Object simple(Object value) {
+        if (value instanceof String text) {
+            return text.length() > 4 * Text.MAX_LENGTH ? text.substring(0, 4 * Text.MAX_LENGTH) : text;
+        }
+        return value instanceof Boolean || value instanceof Number ? value : null;
+    }
+
+    private void addListed() {
+        call(Message.call(DBUS, DBUS_PATH, DBUS, "ListNames", ""))
+                .thenAccept(names -> run(() -> {
+                    if (names != null
+                            && names.type() == Message.RETURN
+                            && !names.body().isEmpty()
+                            && names.body().get(0) instanceof List<?> list) {
+                        for (Object name : list) {
+                            if (name instanceof String s) {
+                                add(s);
+                            }
+                        }
+                    }
+                }));
     }
 
     private static Object song(Player player) {
@@ -443,8 +505,12 @@ public final class MprisSource implements Source, Transport {
                 && body.size() == 3) {
             String name = String.valueOf(body.get(0));
             if (String.valueOf(body.get(2)).isEmpty()) {
+                boolean full = players.size() >= MAX_PLAYERS;
                 if (players.remove(name) != null) {
                     publish();
+                    if (full) {
+                        addListed();
+                    }
                 }
             } else {
                 players.remove(name);
