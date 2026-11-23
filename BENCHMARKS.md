@@ -86,7 +86,35 @@ hold.
 
 ## Long runs
 
-Pending: this section is filled in from `harness soak` runs.
+`harness soak`, one run each, 2026-11-23: 60 minutes with a new track every 5 s, pauses, and a position read about
+every 16 ms; then 10 minutes idle. Cover cache limited to 1 MiB. Windows 10 (Java 25) and Ubuntu 24.04 in WSL (Java
+21), both at once on one PC that was also in other use. The harness fails a run whose last sample exceeds its first by
+more than 2 threads or handles or 16 MiB.
+
+**Both 60-minute runs FAILED that check.**
+
+| 60 minutes | Windows | Linux |
+|---|---|---|
+| Java threads, first to last sample | 12 to 12 | 12 to 12 |
+| OS threads | 39 to 35 | 28 to 27 |
+| Handles / file descriptors | 434 to 450 (limit +2: FAIL) | 20 to 20 |
+| Resident memory | 58.8 to 74.9 MiB, +16.06 (limit +16: FAIL) | 70.7 to 99.8 MiB, +29.1 (limit +16: FAIL) |
+| Private memory | 159.5 to 123.4 MiB | not measured |
+| Java heap in use, minute 10 to 55 | 3.5 to 3.5 MB | 3.5 to 3.5 MB |
+| CPU of one core, whole process | 0.17% | 0.32% |
+
+The first sample is taken at minute 0, before the JVM has warmed up. From minute 10 to 55, Windows handles went from
+450 to 450 and its resident memory grew 6.4 MiB; Linux resident memory grew 17.3 MiB, 8.6 of it between minutes 45 and
+50. Java heap and threads stayed flat, so any growth is outside the Java heap. Its cause is not known, and a slow
+native leak is not ruled out. A longer run would be needed to tell.
+
+| 10 minutes idle | Windows | Linux |
+|---|---|---|
+| CPU of one core, whole process (target under 0.1%) | 0.01%, met | 0.144%, MISSED |
+| Growth check | pass | pass |
+
+A separate 60 s reading of the threads of the Linux idle process gave 0.19% for the whole process, of which the named
+library threads used about 0.02%. Most of the rest was the JVM itself (compiler, periodic tasks, garbage collector).
 
 ## macOS
 
