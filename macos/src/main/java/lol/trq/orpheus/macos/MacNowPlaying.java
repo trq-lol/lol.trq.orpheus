@@ -59,7 +59,10 @@ public final class MacNowPlaying implements Source, Transport {
     private static final String FRAMEWORK = "MediaRemoteAdapter.framework";
     private static final int MAX_LINE_CHARS = 48 << 20;
     private static final int MAX_FAILURES = 5;
-    private static final int MAX_NAME_ATTEMPTS = 3;
+    private static final int MAX_NAME_ATTEMPTS = 5;
+    private static final long NAME_RETRY_NANOS = 2_000_000_000L;
+    private static final long HEALTHY_NANOS = 30_000_000_000L;
+    private static final int KEPT_LINE_CHARS = 64 << 10;
     /** Key under which the process name is kept in the held state; never sent by the helper. */
     static final String PROCESS_NAME = "orpheus.processName";
 
@@ -77,6 +80,7 @@ public final class MacNowPlaying implements Source, Transport {
     private volatile String sessionId = "";
     private long namedPid;
     private int nameAttempts;
+    private long nextNameAt;
     private String processName = "";
     private volatile List<String> prefix;
     long commandTimeoutMillis = 3000;
@@ -128,7 +132,15 @@ public final class MacNowPlaying implements Source, Transport {
                 commandThread = thread;
                 return thread;
             });
-            hook = new Thread(this::destroyStream, "orpheus-macos-shutdown");
+            hook = new Thread(
+                    () -> {
+                        synchronized (lifecycle) {
+                            stopping = true;
+                            lifecycle.notifyAll();
+                            destroyStream();
+                        }
+                    },
+                    "orpheus-macos-shutdown");
             try {
                 Runtime.getRuntime().addShutdownHook(hook);
             } catch (IllegalStateException e) {
@@ -254,14 +266,25 @@ public final class MacNowPlaying implements Source, Transport {
                     process = new ProcessBuilder(command("stream", "--micros")).start();
                 } catch (IOException e) {
                     sink.status(SourceStatus.unavailable("the helper could not be started: " + e.getMessage()));
-                    return;
+                    if (++failures >= MAX_FAILURES) {
+                        return;
+                    }
+                    try {
+                        lifecycle.wait(backoff.nextMillis());
+                    } catch (InterruptedException interrupted) {
+                        return;
+                    }
+                    continue;
                 }
                 stream = process;
             }
             Thread drain = new Thread(() -> drain(process.getErrorStream(), errors), "orpheus-macos-errors");
             drain.setDaemon(true);
             drain.start();
-            boolean worked = read(process, sink);
+            long startedAt = System.nanoTime();
+            namedPid = 0;
+            processName = "";
+            boolean worked = read(process, sink) && System.nanoTime() - startedAt > HEALTHY_NANOS;
             int exit = -1;
             try {
                 process.waitFor(2, TimeUnit.SECONDS);
@@ -340,6 +363,9 @@ public final class MacNowPlaying implements Source, Transport {
                         }
                         sink.sessions(sessions(state, cover));
                     }
+                    if (line.capacity() > KEPT_LINE_CHARS) {
+                        line = new StringBuilder();
+                    }
                     line.setLength(0);
                     overflow = false;
                 }
@@ -410,9 +436,12 @@ public final class MacNowPlaying implements Source, Transport {
                 namedPid = pid;
                 processName = "";
                 nameAttempts = 0;
+                nextNameAt = System.nanoTime();
             }
-            if (processName.isEmpty() && pid > 0 && nameAttempts < MAX_NAME_ATTEMPTS) {
+            long now = System.nanoTime();
+            if (processName.isEmpty() && pid > 0 && nameAttempts < MAX_NAME_ATTEMPTS && now - nextNameAt >= 0) {
                 nameAttempts++;
+                nextNameAt = now + NAME_RETRY_NANOS * nameAttempts;
                 processName = processName(pid);
             }
             if (processName.isEmpty()) {
@@ -597,7 +626,11 @@ public final class MacNowPlaying implements Source, Transport {
             return result;
         }
         try {
-            executor.execute(() -> result.complete(run(arguments)));
+            long queued = System.nanoTime();
+            executor.execute(() -> result.complete(
+                    System.nanoTime() - queued > commandTimeoutMillis * 1_000_000L
+                            ? ControlResult.failed("the helper was busy")
+                            : run(arguments)));
         } catch (RejectedExecutionException e) {
             result.complete(ControlResult.failed("not running"));
         }
