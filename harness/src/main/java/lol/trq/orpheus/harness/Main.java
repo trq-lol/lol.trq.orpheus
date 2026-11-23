@@ -22,7 +22,8 @@ import lol.trq.orpheus.event.SourceStatusChanged;
  *
  * <pre>
  * live  [--publisher path] [--only a,b] [--out file]   run every scenario against a generated session
- * watch [--seconds n] [--allow app,...] [--all]         print what the system reports (for trying real players)
+ * watch [--seconds n] [--allow app,...] [--only app,...] [--all] [--send pause,play,...]
+ *                                                       print what the system reports (for trying real players)
  * soak  [--minutes n] [--publisher path]                run for a while and report resource use
  * </pre>
  */
@@ -37,6 +38,7 @@ public final class Main {
                 options.put(args[i].substring(2), hasValue ? args[++i] : "true");
             }
         }
+        System.setOut(new java.io.PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), true, "UTF-8"));
         String command = args.length == 0 ? "" : args[0];
         int exit =
                 switch (command) {
@@ -145,6 +147,9 @@ public final class Main {
     private static int watch(Map<String, String> options) throws Exception {
         Rig rig = Rig.detect(null);
         AppRules rules = options.containsKey("all") ? AppRules.all() : AppRules.defaults();
+        if (options.containsKey("only")) {
+            rules = AppRules.none().allow(options.get("only").split(","));
+        }
         if (options.containsKey("allow")) {
             rules = rules.allow(options.get("allow").split(","));
         }
@@ -195,7 +200,36 @@ public final class Main {
             System.out.println(Json.write(line));
         });
         orpheus.start();
-        LockSupport.parkNanos(Long.parseLong(options.getOrDefault("seconds", "30")) * 1_000_000_000L);
+        long seconds = Long.parseLong(options.getOrDefault("seconds", "30"));
+        if (options.containsKey("send")) {
+            // --send pause,play,next: one command per second, starting three seconds in
+            LockSupport.parkNanos(3_000_000_000L);
+            seconds = Math.max(0, seconds - 3);
+            for (String name : options.get("send").split(",")) {
+                var controls = orpheus.controls();
+                var future =
+                        switch (name) {
+                            case "pause" -> controls.pause();
+                            case "play" -> controls.play();
+                            case "toggle" -> controls.togglePlayPause();
+                            case "next" -> controls.next();
+                            case "previous" -> controls.previous();
+                            case "stop" -> controls.stop();
+                            case "seek" -> controls.seek(java.time.Duration.ofSeconds(20));
+                            case "shuffle" -> controls.shuffle(true);
+                            case "repeat" -> controls.repeat(lol.trq.orpheus.Repeat.ALL);
+                            case "rate" -> controls.rate(1.5);
+                            case "volume" -> controls.volume(0.5);
+                            default -> controls.mute(true);
+                        };
+                var result = future.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                System.out.println(Json.write(
+                        Map.of("sent", name, "result", result.status().toString(), "reason", result.reason())));
+                LockSupport.parkNanos(1_000_000_000L);
+                seconds = Math.max(0, seconds - 1);
+            }
+        }
+        LockSupport.parkNanos(seconds * 1_000_000_000L);
         orpheus.stop();
         return 0;
     }

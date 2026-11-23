@@ -94,4 +94,19 @@ Pending: this section is filled in from the macOS workflow run.
 
 ## Real players
 
-Pending: this section is filled in from `harness watch` runs against real applications.
+Windows 10 Pro 19045, 2026-11-23, with `harness watch --only <app> --send ...`. The browsers played a generated tone
+from a local page that sets Media Session metadata, artwork, position state and action handlers.
+
+| Player | Seen | Text | Cover | Position | Controls that worked | Notes |
+|---|---|---|---|---|---|---|
+| Chrome 157 | yes, `chrome.exe` | title, artist, album | yes | yes, also after seek | play, pause, toggle, seek, next, previous | Reports kind music for everything. No shuffle, repeat or rate. |
+| Chrome 157, incognito | yes, `chrome.exe` | placeholder title only | a generic icon | yes | same | A private window still publishes a session; only the text and art are withheld. |
+| Firefox 160 | yes, `firefox.exe` | title, artist (no album) | yes | yes, one 1 s correction seen | same | |
+| Edge 158 | yes, `msedge.exe` | title, artist (no album) | none within 12 s | yes | same | |
+| VLC 3.0.20 | no | | | | | Publishes no media session on Windows. |
+
+Not tested: Spotify, TIDAL, Apple Music and other dedicated players (not installed on the test machine, and signing
+in to an account was out of scope), and the Windows Media Player app (it could not be started unattended).
+
+Browsers do not refresh the position when playback pauses or resumes. The library carries the position across such a
+state change itself; before that was added, a paused Chrome tab showed the position of its last report.
