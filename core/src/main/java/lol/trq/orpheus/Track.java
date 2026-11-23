@@ -24,6 +24,10 @@ public final class Track {
     private final int trackNumber;
     private final String uri;
     private final MediaKind kind;
+    private Keys keys;
+
+    /** Comparison forms of the text, computed on first use. */
+    private record Keys(String title, List<String> artists, String allArtists) {}
 
     /**
      * @param id the source's own identifier, or null; never required
@@ -127,10 +131,30 @@ public final class Track {
                 && Math.abs(durationMillis - other.durationMillis) > DURATION_TOLERANCE_MILLIS) {
             return false;
         }
-        if (!Text.title(title).equals(Text.title(other.title))) {
+        Keys mine = keys();
+        Keys theirs = other.keys();
+        if (!mine.title.equals(theirs.title)) {
             return false;
         }
-        return artists.isEmpty() || other.artists.isEmpty() || Text.shareArtist(artists, other.artists);
+        if (artists.isEmpty() || other.artists.isEmpty() || mine.allArtists.equals(theirs.allArtists)) {
+            return true;
+        }
+        for (String artist : mine.artists) {
+            if (theirs.artists.contains(artist)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Racy on purpose: two threads may both compute the same immutable value. */
+    private Keys keys() {
+        Keys k = keys;
+        if (k == null) {
+            k = new Keys(Text.title(title), Text.artists(artists), Text.artist(String.join(" ", artists)));
+            keys = k;
+        }
+        return k;
     }
 
     @Override

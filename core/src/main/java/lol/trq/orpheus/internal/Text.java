@@ -87,6 +87,11 @@ public final class Text {
         return keys;
     }
 
+    /** A comparison key for a whole credit string. */
+    public static String artist(String credit) {
+        return squash(fold(credit));
+    }
+
     /** Whether two credit lists name at least one artist in common. */
     public static boolean shareArtist(List<String> a, List<String> b) {
         List<String> left = artists(a);

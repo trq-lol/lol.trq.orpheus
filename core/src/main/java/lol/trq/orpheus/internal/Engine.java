@@ -67,11 +67,7 @@ public final class Engine {
     static final long SEEK_MILLIS = 1000;
     private static final int MAX_OFFSETS = 256;
 
-    private record Entry(int source, SessionUpdate update, boolean visible) {
-        String key() {
-            return source + "/" + update.sessionId();
-        }
-    }
+    private record Entry(int source, SessionUpdate update, boolean visible, String key) {}
 
     private final List<Source> sources;
     private final Host host;
@@ -82,6 +78,9 @@ public final class Engine {
     private final Map<String, SessionUpdate> last = new HashMap<>();
     private final Map<Control, Target> routes = new HashMap<>();
     private final Map<String, Long> offsets = new LinkedHashMap<>(16, 0.75f, true);
+    private final List<Map<String, String>> keys = new ArrayList<>();
+    private final Map<String, Boolean> visibility = new HashMap<>();
+    private final Map<String, Boolean> videoVisibility = new HashMap<>();
 
     private AppRules rules;
     private Set<String> shareable;
@@ -110,6 +109,7 @@ public final class Engine {
         this.covers = covers;
         for (int i = 0; i < sources.size(); i++) {
             bySource.add(List.of());
+            keys.add(new HashMap<>());
         }
     }
 
@@ -122,6 +122,9 @@ public final class Engine {
     }
 
     public void sessions(int source, List<SessionUpdate> sessions) {
+        if (sessions.equals(bySource.get(source))) {
+            return;
+        }
         bySource.set(source, List.copyOf(sessions));
         refresh();
     }
@@ -136,6 +139,8 @@ public final class Engine {
 
     public void rules(AppRules newRules) {
         rules = newRules;
+        visibility.clear();
+        videoVisibility.clear();
         refresh();
     }
 
@@ -255,9 +260,8 @@ public final class Engine {
         for (int i = 0; i < sources.size(); i++) {
             Source source = sources.get(i);
             for (SessionUpdate update : bySource.get(i)) {
-                boolean visible = !source.foreign()
-                        || rules.visible(update.app(), update.track().kind());
-                Entry entry = new Entry(i, update, visible);
+                boolean visible = !source.foreign() || visible(update);
+                Entry entry = new Entry(i, update, visible, key(i, update.sessionId()));
                 entries.add(entry);
                 newInfos.add(new SessionInfo(source.id(), update.sessionId(), update.app(), update.state(), visible));
                 SessionUpdate before = last.get(entry.key());
@@ -280,6 +284,33 @@ public final class Engine {
             infos = List.copyOf(newInfos);
             host.emit(new SessionsChanged(snapshot, infos));
         }
+    }
+
+    private boolean visible(SessionUpdate update) {
+        boolean video = update.track().kind() == MediaKind.VIDEO;
+        Map<String, Boolean> cache = video ? videoVisibility : visibility;
+        Boolean known = cache.get(update.app().id());
+        if (known == null) {
+            known = rules.visible(update.app(), update.track().kind());
+            if (cache.size() > 1024) {
+                cache.clear();
+            }
+            cache.put(update.app().id(), known);
+        }
+        return known;
+    }
+
+    private String key(int source, String sessionId) {
+        Map<String, String> known = keys.get(source);
+        String key = known.get(sessionId);
+        if (key == null) {
+            key = source + "/" + sessionId;
+            if (known.size() > 1024) {
+                known.clear();
+            }
+            known.put(sessionId, key);
+        }
+        return key;
     }
 
     private Entry select(List<Entry> entries, long now) {
