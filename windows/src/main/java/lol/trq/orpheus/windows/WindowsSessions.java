@@ -4,7 +4,6 @@ package lol.trq.orpheus.windows;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -168,8 +167,6 @@ public final class WindowsSessions implements Source, Transport {
         private final SourceSink sink;
         private final Backoff backoff;
         private final Map<Long, CoverData> thumbnails = new LinkedHashMap<>(16, 0.75f, true);
-        private final Map<Integer, Long> resumedAt = new HashMap<>();
-        private final Map<Integer, Boolean> wasPlaying = new HashMap<>();
         boolean failed;
 
         Reader(SourceSink sink, Backoff backoff) {
@@ -181,20 +178,8 @@ public final class WindowsSessions implements Source, Transport {
         public void sessions(long builtNanosAgo, List<Blob.Session> sessions) {
             long built = System.nanoTime() - builtNanosAgo;
             List<SessionUpdate> updates = new ArrayList<>(sessions.size());
-            Set<Integer> alive = new HashSet<>();
             for (Blob.Session s : sessions) {
-                alive.add(s.id());
-                boolean playing = s.status() == 1;
-                Boolean before = wasPlaying.put(s.id(), playing);
-                if (playing && before != null && !before) {
-                    resumedAt.put(s.id(), built);
-                }
                 long measured = built - s.ageMillis() * 1_000_000L;
-                Long resumed = resumedAt.get(s.id());
-                if (resumed != null && resumed - measured > 0) {
-                    // the application did not refresh its timeline when it resumed: the position stood still until then
-                    measured = resumed;
-                }
                 Set<Control> controls = new HashSet<>();
                 for (int bit = 0; bit < CONTROLS.length; bit++) {
                     if ((s.controls() & 1 << bit) != 0) {
@@ -243,8 +228,6 @@ public final class WindowsSessions implements Source, Transport {
                         thumbnails.get(s.thumbnail()),
                         null));
             }
-            wasPlaying.keySet().retainAll(alive);
-            resumedAt.keySet().retainAll(alive);
             sink.sessions(updates);
         }
 

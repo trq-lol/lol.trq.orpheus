@@ -326,6 +326,53 @@ class EngineTest {
     }
 
     @Test
+    void aPlayerThatPausesWithoutMeasuringAgainKeepsItsPosition() {
+        Engine engine = engine(AppRules.all());
+        long measured = now;
+        engine.sessions(0, List.of(session("a").at(1_000, measured).build()));
+        now += 8 * SECOND;
+        engine.sessions(
+                0,
+                List.of(session("a")
+                        .state(PlaybackState.PAUSED)
+                        .at(1_000, measured + MILLI)
+                        .build()));
+        assertEquals(
+                9_000,
+                engine.snapshot().playback().timeline().positionMillisAt(now + 30 * SECOND),
+                "paused at 9 s, not back at the old reading");
+        assertEquals(0, count(Seeked.class));
+
+        now += 30 * SECOND;
+        engine.sessions(
+                0,
+                List.of(session("a")
+                        .state(PlaybackState.PAUSED)
+                        .at(1_000, measured - MILLI)
+                        .build()));
+        assertEquals(
+                9_000,
+                engine.snapshot().playback().timeline().positionMillisAt(now),
+                "a repeated stale report must not move it");
+
+        engine.sessions(0, List.of(session("a").at(1_000, measured).build()));
+        now += 2 * SECOND;
+        assertEquals(
+                11_000, engine.snapshot().playback().timeline().positionMillisAt(now), "resumed from where it paused");
+
+        engine.sessions(0, List.of(session("a").rate(2).at(1_000, measured).build()));
+        now += SECOND;
+        assertEquals(
+                13_000,
+                engine.snapshot().playback().timeline().positionMillisAt(now),
+                "a speed change keeps the position too");
+
+        engine.sessions(0, List.of(session("a").rate(2).at(50_000, now).build()));
+        assertEquals(
+                50_000, engine.snapshot().playback().timeline().positionMillisAt(now), "a new measurement is believed");
+    }
+
+    @Test
     void anUnchangedReportChangesNothing() {
         Engine engine = engine(AppRules.all());
         SessionUpdate same = session("a").at(10_000, now).build();

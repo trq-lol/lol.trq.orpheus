@@ -89,6 +89,8 @@ public final class Engine {
     private String selected;
     private Snapshot snapshot = Snapshot.NONE;
     private Track rawTrack = Track.NONE;
+    private long rawPosition;
+    private long rawMeasured;
     private CoverData wantedCover;
     private String requestedCover;
     private long lyricsGeneration;
@@ -408,20 +410,29 @@ public final class Engine {
         wantedCover = cover;
         Playback before = snapshot.playback();
         boolean running = p.state() == PlaybackState.PLAYING;
-        Timeline timeline = new Timeline(
-                Math.max(0, p.positionMillis()), p.measuredNanos(), p.rate(), running, track.durationMillis());
+        long position = Math.max(0, p.positionMillis());
+        Timeline timeline = new Timeline(position, p.measuredNanos(), p.rate(), running, track.durationMillis());
         if (before.sourceId().equals(source.id())
                 && before.sessionId().equals(p.sessionId())
                 && sameTrack(rawTrack, p.track())) {
             Timeline old = before.timeline();
-            if (old.running() == running
+            boolean unchanged = old.running() == running
                     && old.rate() == timeline.rate()
-                    && old.durationMillis() == timeline.durationMillis()
-                    && Math.abs(old.positionMillisAt(p.measuredNanos()) - timeline.positionMillis())
-                            <= REANCHOR_MILLIS) {
+                    && old.durationMillis() == timeline.durationMillis();
+            // The same measurement as last time says nothing new about the position, whatever else changed.
+            boolean stale = Math.abs(position - rawPosition) <= REANCHOR_MILLIS
+                    && Math.abs(p.measuredNanos() - rawMeasured) <= REANCHOR_MILLIS * 1_000_000L;
+            if (stale && !unchanged) {
+                // A player paused, resumed or changed speed without measuring again: carry the position over.
+                long now = clock.getAsLong();
+                timeline = new Timeline(old.positionMillisAt(now), now, p.rate(), running, track.durationMillis());
+            } else if (unchanged
+                    && (stale || Math.abs(old.positionMillisAt(p.measuredNanos()) - position) <= REANCHOR_MILLIS)) {
                 timeline = old;
             }
         }
+        rawPosition = position;
+        rawMeasured = p.measuredNanos();
         return new Playback(
                 source.id(),
                 p.sessionId(),
