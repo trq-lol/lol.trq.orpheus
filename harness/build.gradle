@@ -16,7 +16,7 @@ dependencies {
     implementation project(':windows')
     implementation project(':macos')
     implementation project(':system')
-    proguard 'com.guardsquare:proguard-base:7.7.0'
+    proguard 'com.guardsquare:proguard-base:7.10.0'
     downgrader 'xyz.wagyourtail.jvmdowngrader:jvmdowngrader:2.0.1:all'
 }
 
