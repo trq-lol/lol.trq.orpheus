@@ -91,6 +91,8 @@ struct Tracked {
     state: State,
     /// When the position was last seen to change, for applications that report no time of their own.
     measured: Instant,
+    /// The media properties failed last time, so only reading them again can clear the retry.
+    media_pending: bool,
     failures: u32,
     retry_at: Option<Instant>,
 }
@@ -125,26 +127,28 @@ fn fnv(bytes: &[u8]) -> u64 {
 fn read_thumbnail(
     shared: &Shared,
     session_properties: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties,
-) -> Option<Vec<u8>> {
-    let reference = session_properties.Thumbnail().ok()?;
-    let stream = wait(shared, reference.OpenReadAsync().ok()?).ok()?;
-    let size = stream.Size().ok()?;
+) -> Result<Option<Vec<u8>>> {
+    let Ok(reference) = session_properties.Thumbnail() else {
+        return Ok(None);
+    };
+    let stream = wait(shared, reference.OpenReadAsync()?)?;
+    let size = stream.Size()?;
     if size == 0 || size > MAX_THUMBNAIL_BYTES {
-        return None;
+        return Ok(None);
     }
-    let reader = DataReader::CreateDataReader(&stream).ok()?;
-    let loaded = wait(shared, reader.LoadAsync(size as u32).ok()?).ok()?;
+    let reader = DataReader::CreateDataReader(&stream)?;
+    let loaded = wait(shared, reader.LoadAsync(size as u32)?)?;
     let mut bytes = vec![0u8; loaded as usize];
-    reader.ReadBytes(&mut bytes).ok()?;
+    reader.ReadBytes(&mut bytes)?;
     let _ = reader.Close();
     let _ = stream.Close();
-    Some(bytes)
+    Ok(Some(bytes))
 }
 
 /// Reads the parts of a session. Each part keeps its previous value when its call fails.
-fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
+fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool, timeline_event: bool) -> Result<()> {
     let mut state = tracked.state.clone();
-    let session = &tracked.session;
+    let session = &tracked.session.clone();
     let mut first_error = None;
 
     if media {
@@ -162,18 +166,28 @@ fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
                     _ => 0,
                 };
                 match read_thumbnail(shared, &properties) {
-                    Some(bytes) => {
+                    Ok(Some(bytes)) => {
                         let key = fnv(&bytes);
                         if key != state.thumbnail {
                             shared.publish(wire::thumbnail(key, &bytes));
                             state.thumbnail = key;
                         }
                     }
-                    None => state.thumbnail = 0,
+                    Ok(None) => state.thumbnail = 0,
+                    Err(error) => {
+                        if state.title != tracked.state.title || state.artist != tracked.state.artist {
+                            state.thumbnail = 0;
+                        }
+                        first_error = Some(error);
+                    }
                 }
             }
             Err(error) => first_error = Some(error),
         }
+    }
+
+    if media {
+        tracked.media_pending = first_error.is_some();
     }
 
     match session.GetTimelineProperties() {
@@ -231,7 +245,8 @@ fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
     }
 
     let old = &tracked.state;
-    if state.position_millis != old.position_millis
+    if timeline_event
+        || state.position_millis != old.position_millis
         || state.updated_ticks != old.updated_ticks
         || state.status != old.status
         || state.title != old.title
@@ -240,6 +255,7 @@ fn refresh(tracked: &mut Tracked, shared: &Shared, media: bool) -> Result<()> {
     }
     tracked.state = state;
     match first_error {
+        None if tracked.media_pending => Ok(()),
         None => {
             tracked.failures = 0;
             tracked.retry_at = None;
@@ -439,7 +455,7 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
                             .unwrap_or(0),
                         session
                             .TimelinePropertiesChanged(&TypedEventHandler::new(move |_, _| {
-                                timeline.mark_dirty(id);
+                                timeline.mark_dirty(id | TIMELINE_FLAG);
                                 Ok(())
                             }))
                             .unwrap_or(0),
@@ -448,9 +464,19 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
                         Some(old) => (old.state, old.measured, old.failures),
                         None => (State::default(), Instant::now(), 0),
                     };
-                    let mut tracked = Tracked { id, app, session, tokens, state, measured, failures, retry_at: None };
+                    let mut tracked = Tracked {
+                        id,
+                        app,
+                        session,
+                        tokens,
+                        state,
+                        measured,
+                        media_pending: false,
+                        failures,
+                        retry_at: None,
+                    };
                     if !shared.stopping() {
-                        let _ = refresh(&mut tracked, shared, true);
+                        let _ = refresh(&mut tracked, shared, true, false);
                     }
                     kept.push(tracked);
                 }
@@ -464,9 +490,9 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
         }
 
         for flagged in dirty {
-            let id = flagged & !MEDIA_FLAG;
+            let id = flagged & !(MEDIA_FLAG | TIMELINE_FLAG);
             if let Some(tracked) = sessions.iter_mut().find(|t| t.id == id) {
-                let _ = refresh(tracked, shared, flagged & MEDIA_FLAG != 0);
+                let _ = refresh(tracked, shared, flagged & MEDIA_FLAG != 0, flagged & TIMELINE_FLAG != 0);
             }
         }
         // A session whose calls keep failing is asked again less and less often.
@@ -475,7 +501,7 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
             if shared.stopping() {
                 break;
             }
-            let _ = refresh(tracked, shared, true);
+            let _ = refresh(tracked, shared, true, false);
         }
 
         for (queued, command) in commands {
@@ -502,3 +528,5 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
 
 /// Set on a dirty id when the media properties (text, thumbnail) need re-reading too.
 const MEDIA_FLAG: u32 = 1 << 31;
+/// Set when the application itself reported its timeline, even if the values are the same as before.
+const TIMELINE_FLAG: u32 = 1 << 30;
