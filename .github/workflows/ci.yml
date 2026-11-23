@@ -30,7 +30,7 @@ jobs:
         run: |
           ./gradlew :harness:installDist
           dbus-run-session -- harness/build/install/harness/bin/harness live --out live-linux.jsonl
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: live-linux
@@ -63,13 +63,13 @@ jobs:
         run: |
           ./gradlew :harness:installDist
           harness/build/install/harness/bin/harness.bat live --out live-windows.jsonl
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: live-windows
           path: live-windows.jsonl
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-x64
           path: native/target/x86_64-pc-windows-msvc/release/orpheus.dll
