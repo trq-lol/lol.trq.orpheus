@@ -67,6 +67,7 @@ public final class MacNowPlaying implements Source, Transport {
     private final Object lifecycle = new Object();
     private Thread reader;
     private ExecutorService commands;
+    private Thread commandThread;
     private Process stream;
     private Thread hook;
     private boolean stopping;
@@ -117,6 +118,7 @@ public final class MacNowPlaying implements Source, Transport {
             commands = Executors.newSingleThreadExecutor(task -> {
                 Thread thread = new Thread(task, "orpheus-macos-commands");
                 thread.setDaemon(true);
+                commandThread = thread;
                 return thread;
             });
             hook = new Thread(this::destroyStream, "orpheus-macos-shutdown");
@@ -134,12 +136,15 @@ public final class MacNowPlaying implements Source, Transport {
     @Override
     public void stop() {
         Thread ending;
+        Thread endingCommandThread;
         ExecutorService endingCommands;
         synchronized (lifecycle) {
             ending = reader;
             endingCommands = commands;
+            endingCommandThread = commandThread;
             reader = null;
             commands = null;
+            commandThread = null;
             stopping = true;
             destroyStream();
             if (hook != null) {
@@ -155,12 +160,15 @@ public final class MacNowPlaying implements Source, Transport {
         if (endingCommands != null) {
             endingCommands.shutdownNow();
         }
-        if (ending != null && ending != Thread.currentThread()) {
-            try {
+        try {
+            if (ending != null && ending != Thread.currentThread()) {
                 ending.join(10_000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
             }
+            if (endingCommandThread != null && endingCommandThread != Thread.currentThread()) {
+                endingCommandThread.join(5000);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

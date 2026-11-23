@@ -378,6 +378,10 @@ public final class Orpheus implements AutoCloseable {
                     if (ownEvents != null) {
                         ownEvents.awaitTermination(5, TimeUnit.SECONDS);
                     }
+                    // an executor reports termination a moment before its thread has really ended
+                    for (Thread thread : threads) {
+                        thread.join(2000);
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }

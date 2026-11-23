@@ -81,6 +81,7 @@ public final class MprisSource implements Source, Transport {
     private final Backoff backoff = new Backoff();
     private final Object lifecycle = new Object();
     private ScheduledExecutorService worker;
+    private Thread workerThread;
     private volatile SourceSink sink;
     private Bus bus;
     private boolean publishQueued;
@@ -118,6 +119,7 @@ public final class MprisSource implements Source, Transport {
             ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, task -> {
                 Thread thread = new Thread(task, "orpheus-mpris");
                 thread.setDaemon(true);
+                workerThread = thread;
                 return thread;
             });
             executor.setRemoveOnCancelPolicy(true);
@@ -135,9 +137,12 @@ public final class MprisSource implements Source, Transport {
     @Override
     public void stop() {
         ScheduledExecutorService ending;
+        Thread endingThread;
         synchronized (lifecycle) {
             ending = worker;
+            endingThread = workerThread;
             worker = null;
+            workerThread = null;
             sink = null;
         }
         if (ending == null) {
@@ -158,6 +163,9 @@ public final class MprisSource implements Source, Transport {
         ending.shutdownNow();
         try {
             ending.awaitTermination(5, TimeUnit.SECONDS);
+            if (endingThread != null && endingThread != Thread.currentThread()) {
+                endingThread.join(2000);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
