@@ -1,1 +1,5 @@
-dependencies { api project(':core') }
+// Linux: media players on the session bus (MPRIS) over a small D-Bus client. Pure Java.
+
+dependencies {
+    api project(':core')
+}
