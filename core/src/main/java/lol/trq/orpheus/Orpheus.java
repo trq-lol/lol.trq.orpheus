@@ -105,6 +105,7 @@ public final class Orpheus implements AutoCloseable {
                 Run next = new Run(previous == null ? CompletableFuture.completedFuture(null) : previous.finished);
                 run = next;
                 if (previous != null && !previous.finished.isDone()) {
+                    debug("start waits for the previous stop to finish");
                     // a stop asked for from a library thread is still winding down: start once it is done
                     previous.finished.whenComplete((done, error) -> next.begin());
                 } else {
@@ -428,24 +429,30 @@ public final class Orpheus implements AutoCloseable {
                     debug("stop did not finish cleanly: " + e);
                 }
             }
+            io.shutdownNow();
+            if (!inside) {
+                try {
+                    io.awaitTermination(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             for (LyricsProvider provider : providers) {
                 if (provider instanceof AutoCloseable closeable) {
                     try {
                         closeable.close();
-                    } catch (Exception e) {
+                    } catch (Exception | LinkageError e) {
                         debug("lyrics provider failed to close: " + e);
                     }
                 }
             }
             hub.shutdown();
-            io.shutdownNow();
             if (ownEvents != null) {
                 ownEvents.shutdown();
             }
             if (!inside) {
                 try {
                     hub.awaitTermination(5, TimeUnit.SECONDS);
-                    io.awaitTermination(5, TimeUnit.SECONDS);
                     if (ownEvents != null) {
                         ownEvents.awaitTermination(5, TimeUnit.SECONDS);
                     }

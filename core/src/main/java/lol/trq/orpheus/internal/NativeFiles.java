@@ -5,9 +5,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
@@ -15,7 +17,6 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -196,14 +197,37 @@ public final class NativeFiles {
         if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) || isReparsePoint(path)) {
             return;
         }
-        try (Stream<Path> walk = Files.walk(path)) {
-            for (Path each : walk.sorted(Comparator.reverseOrder()).toList()) {
-                try {
-                    Files.deleteIfExists(each);
-                } catch (IOException e) {
-                    // in use by another process: leave it
+        try {
+            Files.walkFileTree(path, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
+                    return attributes.isOther() ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
                 }
-            }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+                    return remove(file);
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException e) {
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path directory, IOException e) {
+                    return remove(directory);
+                }
+
+                private FileVisitResult remove(Path each) {
+                    try {
+                        Files.deleteIfExists(each);
+                    } catch (IOException e) {
+                        // in use by another process: leave it
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+            });
         } catch (IOException | RuntimeException e) {
             // nothing more to do
         }

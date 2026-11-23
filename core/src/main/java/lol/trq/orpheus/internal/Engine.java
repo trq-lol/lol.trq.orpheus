@@ -507,10 +507,7 @@ public final class Engine {
 
         // players report the title and the duration separately: lyrics matched with the wrong duration are dropped
         long duration = playback.track().durationMillis();
-        boolean lookAgain = !trackChanged
-                && duration > 0
-                && Math.abs(duration - lyricsDuration) > DURATION_MILLIS
-                && lyricsLookups < MAX_LYRIC_LOOKUPS;
+        boolean lookAgain = !trackChanged && duration > 0 && Math.abs(duration - lyricsDuration) > DURATION_MILLIS;
         Lyrics lyrics = trackChanged || lookAgain ? Lyrics.NONE : snapshot.lyrics();
         boolean lyricsDropped = lookAgain && snapshot.lyrics() != Lyrics.NONE;
         Cover cover = playback.coverKey() == null ? null : covers.get(playback.coverKey());
@@ -529,9 +526,13 @@ public final class Engine {
         }
         if (trackChanged || lookAgain) {
             lyricsGeneration++;
-            lyricsDuration = duration;
             lyricsLookups = trackChanged ? 1 : lyricsLookups + 1;
-            if (playback.isPresent() && !playback.track().isEmpty()) {
+            if (lyricsLookups <= MAX_LYRIC_LOOKUPS) {
+                lyricsDuration = duration;
+            }
+            if (lyricsLookups <= MAX_LYRIC_LOOKUPS
+                    && playback.isPresent()
+                    && !playback.track().isEmpty()) {
                 host.findLyrics(lyricsGeneration, playback.track());
             }
         }
