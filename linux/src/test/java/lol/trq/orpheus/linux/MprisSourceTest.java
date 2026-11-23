@@ -101,10 +101,21 @@ class MprisSourceTest {
         bus.signal(
                 ":1.999",
                 Message.signal("/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", "Seeked", "x", 1_000_000L));
+        bus.signal(
+                ":1.999",
+                Message.signal(
+                        "/org/mpris/MediaPlayer2",
+                        "org.freedesktop.DBus.Properties",
+                        "PropertiesChanged",
+                        "sa{sv}as",
+                        "org.mpris.MediaPlayer2.Player",
+                        Map.of("Volume", new Variant("d", 0.1)),
+                        List.of()));
         bus.changed("PlaybackStatus", new Variant("s", "Paused"));
         SessionUpdate paused = sink.awaitSessions(s -> s.size() == 1 && s.get(0).state() == PlaybackState.PAUSED)
                 .get(0);
         assertEquals(42_000, paused.positionMillis(), "a Seeked signal from another connection must be ignored");
+        assertEquals(0.8, paused.volume(), "a property change from another connection must be ignored");
 
         bus.signal(
                 FakeBus.OWNER,

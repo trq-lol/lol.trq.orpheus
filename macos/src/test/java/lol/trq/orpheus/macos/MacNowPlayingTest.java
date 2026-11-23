@@ -123,6 +123,8 @@ class MacNowPlayingTest {
         assertEquals("unknown", other.app().id(), "a payload without any bundle id still gets an id");
         assertEquals(List.of(), other.track().artists(), "a full payload drops what the previous one had");
 
+        assertTrue(MacNowPlaying.apply("{\"diff\":true,\"payload\":{\"playing\":null,\"title\":null}}", state));
+        assertNull(session(state), "a diff that removes every key leaves nothing playing");
         assertTrue(MacNowPlaying.apply("{\"type\":\"data\",\"diff\":false,\"payload\":{}}", state));
         assertNull(session(state), "an empty payload means nothing is playing");
         assertFalse(MacNowPlaying.apply("not json", state));
@@ -143,6 +145,11 @@ class MacNowPlayingTest {
         assertEquals(5_000_000_000L, live.measuredNanos(), "an absurd timestamp is ignored");
         assertEquals(1.0, live.rate());
         assertEquals(MediaKind.VIDEO, live.track().kind());
+
+        state.put("timestampEpochMicros", 1_000_002_000_000.0 + 10_000_000);
+        assertEquals(5_000_000_000L, session(state).measuredNanos(), "a timestamp from the future is ignored");
+        state.put("timestampEpochMicros", 1_000_002_000_000.0 - 3 * 86_400_000_000.0);
+        assertEquals(5_000_000_000L, session(state).measuredNanos(), "a timestamp from days ago is ignored");
 
         MacNowPlaying.CoverCache cache = new MacNowPlaying.CoverCache();
         String art = Base64.getEncoder().encodeToString(new byte[] {1, 2, 3});

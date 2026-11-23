@@ -40,6 +40,7 @@ class CoverTest {
         byte[] huge = png.clone();
         huge[16] = 0x7F; // claims a width of two thousand million pixels
         assertNull(CoverDecoder.decode("k", huge, 512));
+        assertNull(CoverDecoder.decode("k", Media.png(5000, 2, 0xFF000000), 512), "a real image over the size limit");
         Random random = new Random(3);
         for (int cut = 0; cut < png.length; cut += 3) {
             CoverDecoder.decode("k", Arrays.copyOf(png, cut), 512);
