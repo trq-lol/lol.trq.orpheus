@@ -1,0 +1,5 @@
+// Model, hub, push source, covers and lyrics. Pure Java, no dependencies.
+
+javadoc {
+    exclude 'lol/trq/orpheus/internal/**'
+}
