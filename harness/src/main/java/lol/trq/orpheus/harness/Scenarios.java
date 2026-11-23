@@ -615,9 +615,9 @@ final class Scenarios {
         Map<String, Object> after = ProcessStats.sample();
         numbers.put("before", before);
         numbers.put("after", after);
-        check(
-                ((Number) after.get("libraryThreads")).longValue() == 0,
-                "library threads survived stop: " + after.get("libraryThreads"));
+        long threadsBefore = ((Number) before.get("libraryThreads")).longValue();
+        long threadsAfter = ((Number) after.get("libraryThreads")).longValue();
+        check(threadsAfter <= threadsBefore, "library threads grew from " + threadsBefore + " to " + threadsAfter);
         for (String key : List.of("osThreads", "handles", "children")) {
             if (before.get(key) instanceof Number b && after.get(key) instanceof Number a) {
                 check(

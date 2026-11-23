@@ -337,6 +337,14 @@ public final class MprisSource implements Source, Transport {
         player.positionNanos = System.nanoTime();
     }
 
+    private static long currentMicros(Player player) {
+        if (!"Playing".equals(player.properties.get("PlaybackStatus"))) {
+            return player.positionMicros;
+        }
+        double rate = player.properties.get("Rate") instanceof Number r ? r.doubleValue() : 1;
+        return player.positionMicros + (long) ((System.nanoTime() - player.positionNanos) / 1000 * rate);
+    }
+
     private void readPosition(Player player) {
         long asked = System.nanoTime();
         call(Message.call(player.name, OBJECT, PROPERTIES, "Get", "ss", PLAYER, "Position"))
@@ -397,6 +405,10 @@ public final class MprisSource implements Source, Transport {
             boolean moved = changed.containsKey("PlaybackStatus")
                     || changed.containsKey("Metadata")
                     || changed.containsKey("Rate");
+            if (moved) {
+                // freeze the position where it is now: the new state must not start from an old measurement
+                position(player, currentMicros(player));
+            }
             player.properties.putAll(changed);
             if (body.get(2) instanceof List<?> invalidated && !invalidated.isEmpty()) {
                 loadAll(player);
@@ -646,11 +658,7 @@ public final class MprisSource implements Source, Transport {
         if (id != null && id.startsWith("/")) {
             return Message.call(player.name, OBJECT, PLAYER, "SetPosition", "ox", id, targetMillis * 1000);
         }
-        long nowMicros = player.positionMicros;
-        if ("Playing".equals(player.properties.get("PlaybackStatus"))) {
-            double rate = player.properties.get("Rate") instanceof Number r ? r.doubleValue() : 1;
-            nowMicros += (long) ((System.nanoTime() - player.positionNanos) / 1000 * rate);
-        }
+        long nowMicros = currentMicros(player);
         return Message.call(player.name, OBJECT, PLAYER, "Seek", "x", targetMillis * 1000 - nowMicros);
     }
 
