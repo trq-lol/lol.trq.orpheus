@@ -1,1 +1,21 @@
-dependencies { api project(':core') }
+// Development harness: test publishers, live scenarios, soak. Not published.
+// Run: ./gradlew :harness:run --args="live"
+
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':core')
+    implementation project(':linux')
+    implementation project(':windows')
+}
+
+application {
+    mainClass = 'lol.trq.orpheus.harness.Main'
+    applicationDefaultJvmArgs = ['--enable-native-access=ALL-UNNAMED']
+}
+
+tasks.named('run') {
+    workingDir = rootProject.projectDir
+}
