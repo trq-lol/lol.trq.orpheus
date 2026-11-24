@@ -159,6 +159,9 @@ See the [live harness](docs/harness.md) for testing against real sessions and [b
 
 ## For AI agents
 
+Using it from Claude Code? Install the [trq-lol plugin](https://github.com/trq-lol/claude-plugin). The rest of this
+section is for working on this repository.
+
 Read [CLAUDE.md](CLAUDE.md) first. [llms.txt](llms.txt) indexes the docs and source.
 
 ## License
