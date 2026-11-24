@@ -4,4 +4,4 @@ plugins {
 
 rootProject.name = 'lol.trq.orpheus'
 
-include 'core', 'linux', 'windows', 'macos', 'system', 'harness'
+include 'core', 'linux', 'windows', 'macos', 'system', 'spotify', 'harness'

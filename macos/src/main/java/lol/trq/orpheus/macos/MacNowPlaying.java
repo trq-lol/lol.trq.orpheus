@@ -33,6 +33,7 @@ import lol.trq.orpheus.SourceApp;
 import lol.trq.orpheus.Track;
 import lol.trq.orpheus.cover.CoverDecoder;
 import lol.trq.orpheus.internal.Backoff;
+import lol.trq.orpheus.internal.MiniJson;
 import lol.trq.orpheus.internal.NativeFiles;
 import lol.trq.orpheus.source.ControlRequest;
 import lol.trq.orpheus.source.CoverData;

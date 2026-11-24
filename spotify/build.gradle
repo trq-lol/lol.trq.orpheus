@@ -1,0 +1,5 @@
+// Spotify accounts through the Web API. Opt-in, and the only module that uses the network.
+
+dependencies {
+    api project(':core')
+}

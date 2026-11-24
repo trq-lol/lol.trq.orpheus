@@ -2,6 +2,7 @@
 package lol.trq.orpheus.source;
 
 import lol.trq.orpheus.DisplayRules;
+import lol.trq.orpheus.SourceApp;
 
 /**
  * Something that knows what is playing. A source owns its threads; none of its methods may block the caller.
@@ -26,6 +27,12 @@ public interface Source {
     default boolean foreign() {
         return false;
     }
+
+    /**
+     * A session of another source changed its track or state, or came or went. A source that polls may look now instead
+     * of waiting. Called on the hub thread; return quickly.
+     */
+    default void changedElsewhere(SourceApp app) {}
 
     /** Rules that come with the data of this source. */
     default DisplayRules display() {

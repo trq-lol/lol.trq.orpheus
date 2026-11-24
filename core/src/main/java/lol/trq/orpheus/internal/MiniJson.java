@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-package lol.trq.orpheus.macos;
+package lol.trq.orpheus.internal;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -7,11 +7,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A small JSON reader for the lines the helper process prints. Objects become {@code Map}, arrays {@code List},
+ * A small JSON reader for answers of helpers and services. Not API. Objects become {@code Map}, arrays {@code List},
  * numbers {@code Double}, plus {@code String}, {@code Boolean} and null. Input is untrusted: anything malformed or
  * too deeply nested throws {@link IllegalArgumentException} and nothing else.
  */
-final class MiniJson {
+public final class MiniJson {
     private static final int MAX_DEPTH = 32;
 
     private final String text;
@@ -21,7 +21,7 @@ final class MiniJson {
         this.text = text;
     }
 
-    static Object parse(String text) {
+    public static Object parse(String text) {
         try {
             MiniJson parser = new MiniJson(text);
             Object value = parser.value(0);

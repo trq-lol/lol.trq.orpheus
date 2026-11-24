@@ -7,6 +7,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- `orpheus-spotify`: an experimental source for the Spotify Web API.
+- `Source.changedElsewhere`, so a polling source can react to the system session.
+
 - Playback state, controls, events and immutable snapshots (`Orpheus`).
 - Windows media sessions, Linux MPRIS and experimental macOS Now Playing.
 - `PushSource` for your own player.

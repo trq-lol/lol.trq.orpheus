@@ -4,7 +4,7 @@ plugins {
     id 'me.champeau.jmh' version '0.7.4' apply false
 }
 
-def published = ['core', 'linux', 'windows', 'macos', 'system']
+def published = ['core', 'linux', 'windows', 'macos', 'system', 'spotify']
 
 subprojects {
     apply plugin: 'java-library'

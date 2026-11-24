@@ -4,6 +4,7 @@ package lol.trq.orpheus;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -338,6 +339,7 @@ public final class Orpheus implements AutoCloseable {
         final CompletableFuture<Void> finished = new CompletableFuture<>();
         final CompletableFuture<Void> sourcesStopped = new CompletableFuture<>();
         final CompletableFuture<Void> previous;
+        private final Map<Integer, Map<String, Brief>> briefs = new HashMap<>();
         private final ArrayDeque<OrpheusEvent> waiting = new ArrayDeque<>();
         private long dropped;
         private final AtomicReference<Runnable> nextCover = new AtomicReference<>();
@@ -410,7 +412,10 @@ public final class Orpheus implements AutoCloseable {
 
                 @Override
                 public void sessions(List<SessionUpdate> list) {
-                    submit(hub, () -> engine.sessions(index, list));
+                    submit(hub, () -> {
+                        engine.sessions(index, list);
+                        tellOthers(index, list);
+                    });
                 }
             };
             try {
@@ -494,6 +499,43 @@ public final class Orpheus implements AutoCloseable {
             });
         }
 
+        private void tellOthers(int index, List<SessionUpdate> list) {
+            if (sources.size() == 1) {
+                return;
+            }
+            Map<String, Brief> now = new HashMap<>();
+            for (SessionUpdate update : list) {
+                now.put(
+                        update.sessionId(),
+                        new Brief(update.app(), update.track().title(), update.state()));
+            }
+            Map<String, Brief> before = briefs.put(index, now);
+            Set<SourceApp> changed = new HashSet<>();
+            now.forEach((id, brief) -> {
+                if (before == null || !brief.equals(before.get(id))) {
+                    changed.add(brief.app());
+                }
+            });
+            if (before != null) {
+                before.forEach((id, brief) -> {
+                    if (!now.containsKey(id)) {
+                        changed.add(brief.app());
+                    }
+                });
+            }
+            for (int i = 0; i < sources.size(); i++) {
+                for (SourceApp app : changed) {
+                    if (i != index) {
+                        try {
+                            sources.get(i).changedElsewhere(app);
+                        } catch (RuntimeException | LinkageError e) {
+                            debug("source " + sources.get(i).id() + " failed: " + e);
+                        }
+                    }
+                }
+            }
+        }
+
         /** Runs a stop on its own thread, so one that hangs cannot block the others or a later start. */
         private Thread stopAside(Object owner, String what, AutoCloseable stop) {
             CompletableFuture<Void> stopped = new CompletableFuture<>();
@@ -572,8 +614,7 @@ public final class Orpheus implements AutoCloseable {
                 CompletableFuture<R> result,
                 Function<String, R> failed,
                 Function<String, R> unsupported) {
-            Source source = engine.selectedSource();
-            C capability = source == null ? null : source.capability(type);
+            C capability = engine.capability(type);
             if (capability == null) {
                 result.complete(unsupported.apply("not supported by the selected source"));
                 return;
@@ -753,6 +794,9 @@ public final class Orpheus implements AutoCloseable {
             }
         }
     }
+
+    /** The part of a session whose change other sources are told about. */
+    private record Brief(SourceApp app, String title, PlaybackState state) {}
 
     /** Configures an {@link Orpheus}. */
     public static final class Builder {

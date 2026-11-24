@@ -91,7 +91,7 @@ jobs:
         run: |
           version=$VERSION
           mkdir out
-          for module in core linux windows macos system; do
+          for module in core linux windows macos system spotify; do
             for kind in "" "-sources"; do
               cp "$module/build/libs/orpheus-$module-${version}${kind}.jar" out/
             done

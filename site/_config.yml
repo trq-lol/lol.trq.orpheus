@@ -8,6 +8,7 @@ license: MIT
 repo: https://github.com/trq-lol/lol.trq.orpheus
 nav:
   - { title: Platforms, url: /docs/platforms.html }
+  - { title: Spotify, url: /docs/spotify.html }
   - { title: Harness, url: /docs/harness.html }
   - { title: Benchmarks, url: /BENCHMARKS.html }
   - { title: Changelog, url: /CHANGELOG.html }

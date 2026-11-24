@@ -263,14 +263,17 @@ public final class Engine {
         return false;
     }
 
-    /** The source of the selected session, or the first source when nothing is selected. */
-    public Source selectedSource() {
+    /** The ability of the selected source, or else of the first source that has it. Null when none does. */
+    public <C> C capability(Class<C> type) {
+        C first = null;
         for (Source source : sources) {
-            if (source.id().equals(snapshot.playback().sourceId())) {
-                return source;
+            C capability = source.capability(type);
+            if (capability != null && source.id().equals(snapshot.playback().sourceId())) {
+                return capability;
             }
+            first = first == null ? capability : first;
         }
-        return sources.isEmpty() ? null : sources.get(0);
+        return first;
     }
 
     /** Recomputes everything from the latest reports. Cheap when nothing changed. */

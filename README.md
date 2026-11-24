@@ -8,7 +8,8 @@
 A Java library that shows what is playing, controls it and displays synced lyrics.
 
 It reads the media sessions of Windows, Linux and macOS, so it needs no account and works with any player that
-publishes one. You can also feed it from your own player. It never uses the network.
+publishes one. You can also feed it from your own player. Only the optional [Spotify module](docs/spotify.md) uses the
+network.
 
 ## Requirements
 
@@ -49,6 +50,7 @@ dependencies {
 | `orpheus-windows` | Windows media sessions |
 | `orpheus-linux` | MPRIS |
 | `orpheus-macos` | macOS Now Playing |
+| `orpheus-spotify` | [Spotify Web API](docs/spotify.md), opt-in |
 
 ## Usage
 
@@ -135,7 +137,7 @@ picker. Sources reporting the same song are merged.
 - Only known music players are visible by default. Browsers and unknown apps stay hidden until allowed in `AppRules`.
 - Browsers report every video as music, and private windows publish sessions too. The library cannot tell them apart.
 - `Playback.shareable()` is false until you opt a source in.
-- It makes no network requests, sends no telemetry and logs no track data unless you add a debug sink. The only files
+- It makes no network requests (except `orpheus-spotify`), sends no telemetry and logs no track data unless you add a debug sink. The only files
   it writes are its extracted native files.
 - On Linux, players name their cover by file path, so a program posing as a player can have the library show any
   image file the user can read (up to 16 MiB).
@@ -145,7 +147,7 @@ picker. Sources reporting the same song are merged.
 - macOS relies on a private system API that any update can break, and its timing can be off.
   [Details](docs/platforms.md#macos).
 - Windows has no volume control through media sessions.
-- Queue, device and library access work for push sources only.
+- Queue, device and library access work for push sources and Spotify only.
 - A repeated track with the same title and artist counts as a seek, not a new track.
 
 ## Building

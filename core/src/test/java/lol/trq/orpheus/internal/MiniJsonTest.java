@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-package lol.trq.orpheus.macos;
+package lol.trq.orpheus.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
