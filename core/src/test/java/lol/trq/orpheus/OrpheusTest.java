@@ -436,6 +436,7 @@ class OrpheusTest {
                 })
                 .build();
         orpheus.start();
+        get(orpheus.controls().pause());
         for (int i = 0; i < 10; i++) {
             source.report(session("s1").track(Track.of("Song " + i, "Me")).build());
             if (i == 0) {
