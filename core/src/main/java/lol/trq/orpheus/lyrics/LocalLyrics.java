@@ -158,6 +158,11 @@ public final class LocalLyrics implements LyricsProvider, AutoCloseable {
                     public FileVisitResult visitFileFailed(Path file, IOException e) {
                         return FileVisitResult.CONTINUE;
                     }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path directory, IOException e) {
+                        return FileVisitResult.CONTINUE;
+                    }
                 });
             } catch (IOException | RuntimeException e) {
                 // an unreadable folder contributes nothing

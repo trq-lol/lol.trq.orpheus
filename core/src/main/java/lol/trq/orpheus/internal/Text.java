@@ -19,6 +19,7 @@ public final class Text {
     private static final Pattern DASH_SUFFIX =
             Pattern.compile("\\s+[-\u2013\u2014]\\s+[^-\u2013\u2014]*\\b(?:" + NOISE + ")\\b.*$");
     private static final Pattern FEATURING = Pattern.compile("\\s+(?:feat|ft|featuring)\\b\\.?\\s.*$");
+    private static final Pattern SPACES = Pattern.compile("\s+");
     private static final Pattern NOT_WORD = Pattern.compile("[^\\p{L}\\p{N}]+");
     private static final Pattern VERSION = Pattern.compile("\\b(?:" + VERSIONS + ")\\b");
     private static final Pattern ARTIST_SPLIT =
@@ -138,7 +139,9 @@ public final class Text {
     private static String fold(String value) {
         String text = value == null ? "" : value.length() > MAX_LENGTH ? value.substring(0, MAX_LENGTH) : value;
         String folded = Normalizer.normalize(text, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);
-        return folded.length() > MAX_LENGTH ? folded.substring(0, MAX_LENGTH) : folded;
+        String capped = folded.length() > MAX_LENGTH ? folded.substring(0, MAX_LENGTH) : folded;
+        // the patterns above backtrack over runs of spaces, so a run never reaches them
+        return SPACES.matcher(capped).replaceAll(" ");
     }
 
     private static String squash(String text) {

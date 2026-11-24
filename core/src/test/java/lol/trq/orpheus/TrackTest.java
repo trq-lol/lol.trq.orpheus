@@ -3,8 +3,10 @@ package lol.trq.orpheus;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -55,5 +57,19 @@ class TrackTest {
                 new Track(null, "t", java.util.Collections.nCopies(5000, "A"), "", "", 1, 0, null, MediaKind.UNKNOWN)
                         .artists()
                         .size());
+    }
+
+    @Test
+    void longRunsOfSpacesAndDashesAreComparedQuickly() {
+        String spaces = " ".repeat(1000);
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            List<String> texts = List.of(
+                    "a" + spaces + "b", "a" + " -".repeat(500), "a" + " and ".repeat(200), "a" + " - a".repeat(250));
+            for (String hostile : texts) {
+                Track one = Track.of(hostile, hostile);
+                assertTrue(one.sameSong(Track.of(hostile, hostile)));
+            }
+        });
+        assertTrue(Track.of("First" + spaces + "Light", "Ada").sameSong(Track.of("first light", "Ada")));
     }
 }

@@ -48,4 +48,4 @@
 
 - [SECURITY](https://github.com/trq-lol/lol.trq.orpheus/blob/main/SECURITY.md)
 - [CODE_OF_CONDUCT](https://github.com/trq-lol/lol.trq.orpheus/blob/main/CODE_OF_CONDUCT.md)
-- [LICENSE](LICENSE)
+- [LICENSE](https://github.com/trq-lol/lol.trq.orpheus/blob/main/LICENSE)
