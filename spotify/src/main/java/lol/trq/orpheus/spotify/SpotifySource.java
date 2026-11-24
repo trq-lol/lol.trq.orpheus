@@ -590,6 +590,7 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
     /** One start-to-stop cycle. Polling and commands have a thread each, so a slow poll does not delay a command. */
     private final class Run {
         final SourceSink sink;
+        final Set<Thread> threads = ConcurrentHashMap.newKeySet();
         final ScheduledThreadPoolExecutor polling = executor(POLL_THREAD);
         final ScheduledThreadPoolExecutor commands = executor("orpheus-spotify-commands");
         final ScheduledThreadPoolExecutor covers = executor("orpheus-spotify-covers");
@@ -623,6 +624,7 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, task -> {
                 Thread thread = new Thread(task, name);
                 thread.setDaemon(true);
+                threads.add(thread);
                 return thread;
             });
             executor.setRemoveOnCancelPolicy(true);
@@ -643,6 +645,12 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
                 polling.awaitTermination(4, TimeUnit.SECONDS);
                 commands.awaitTermination(4, TimeUnit.SECONDS);
                 covers.awaitTermination(4, TimeUnit.SECONDS);
+                // an executor reports termination a moment before its thread has really ended
+                for (Thread thread : threads) {
+                    if (thread != Thread.currentThread()) {
+                        thread.join(1000);
+                    }
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
