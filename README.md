@@ -208,3 +208,7 @@ harness under `harness/` shows real use against a live session.
 
 MIT, see [LICENSE](LICENSE). Third-party parts are listed in [NOTICE.md](NOTICE.md). This project is not affiliated
 with any operating system vendor, player or music service; see [DISCLAIMER.md](DISCLAIMER.md).
+
+## Activity
+
+![Repobeats analytics image](https://repobeats.axiom.co/api/embed/999d34277e3169cd99a0df781bfb77c41a206370.svg "Repobeats analytics image")
