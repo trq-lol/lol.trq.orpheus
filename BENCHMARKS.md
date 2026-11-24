@@ -105,8 +105,22 @@ more than 2 threads or handles or 16 MiB.
 
 The first sample is taken at minute 0, before the JVM has warmed up. From minute 10 to 55, Windows handles went from
 450 to 450 and its resident memory grew 6.4 MiB; Linux resident memory grew 17.3 MiB, 8.6 of it between minutes 45 and
-50. Java heap and threads stayed flat, so any growth is outside the Java heap. Its cause is not known, and a slow
-native leak is not ruled out. A longer run would be needed to tell.
+50. Java heap and threads stayed flat, so any growth is outside the Java heap.
+
+Longer and faster runs, 2026-11-23, with a fixed and pre-touched 48 MiB heap so that heap pages do not count as growth.
+All of them **FAILED** the check above, which compares with the sample at minute 0; what happens after the start:
+
+| Run | Code | Result |
+|---|---|---|
+| Windows 10, 3 hours, a track every 5 s | before the review fixes | Private memory +9.3 MiB from minute 15 to 170, uneven; the memory the JVM tracks itself +1.2 MiB. Handles 439 to 452 from minute 5 on (421 at the start). The PC was in other use. |
+| Ubuntu in WSL, 3 hours, a track every 5 s | before the review fixes | Resident memory 113.8 to 133.1 MiB until minute 45, then 133.1 to 133.7 MiB until minute 175. |
+| Windows Server 2025 runner, 15 minutes, about 9 tracks a second | with the review fixes | Private memory 130.8 to 129.4 MiB from minute 4 to 14, over 5,276 tracks with covers; without covers 125.5 to 125.5 MiB. |
+| Ubuntu runner, 15 minutes, about 9 tracks a second | with the review fixes | Resident memory 137.0 to 137.1 MiB from minute 5 to 14 with covers; without covers 136.1 to 136.2 MiB. |
+| M2 Mac, macOS 26.5, 1 hour, a track every 5 s, default heap | before the review fixes | Passed the check. Resident memory 122.8 to 129.2 MiB from minute 10 to 55. Idle CPU 0.111%, over the 0.1% target. |
+
+So there was no growth per track change in the code with the fixes: the growth of the long Windows run, about 5 KB per
+track, would have added some 25 MiB to the fast run. Not excluded: slow growth that depends on time rather than on
+tracks, which a 15 minute run cannot show, and the long Windows run has not been repeated with the fixes.
 
 | 10 minutes idle | Windows | Linux |
 |---|---|---|

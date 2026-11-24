@@ -23,6 +23,7 @@ harness/build/install/harness/bin/harness live --only controls  # one scenario
 harness/build/install/harness/bin/harness watch --all           # print what real players report
 harness/build/install/harness/bin/harness soak --minutes 60     # resource use over time
 harness/build/install/harness/bin/harness soak --idle --minutes 10
+harness/build/install/harness/bin/harness soak --minutes 15 --track-millis 100 [--no-covers]   # growth per track
 ```
 
 On Linux the harness needs a session bus; in a headless shell use `dbus-run-session -- harness live`.

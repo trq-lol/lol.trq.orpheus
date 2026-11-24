@@ -10,7 +10,7 @@ import lol.trq.orpheus.Orpheus;
 
 /**
  * Runs the library against a publisher that keeps changing tracks, and samples resource use. The first sample is
- * taken after a warm-up; growth is judged between the first and the last sample.
+ * taken a few seconds after the start; growth is judged between the first and the last sample.
  */
 final class Soak {
     private Soak() {}
@@ -18,6 +18,8 @@ final class Soak {
     static int run(Map<String, String> options) throws Exception {
         double minutes = Double.parseDouble(options.getOrDefault("minutes", "60"));
         long sampleEverySeconds = Long.parseLong(options.getOrDefault("sample", "60"));
+        long trackNanos = Long.parseLong(options.getOrDefault("track-millis", "5000")) * 1_000_000L;
+        boolean covers = !options.containsKey("no-covers");
         boolean idle = options.containsKey("idle");
         Rig rig = Rig.detect(options.containsKey("publisher") ? Path.of(options.get("publisher")) : null);
         Publisher publisher = rig.publisher();
@@ -34,7 +36,7 @@ final class Soak {
             LockSupport.parkNanos(5_000_000_000L);
             long end = System.nanoTime() + (long) (minutes * 60e9);
             long nextSample = System.nanoTime();
-            long nextTrack = System.nanoTime() + 5_000_000_000L;
+            long nextTrack = System.nanoTime() + trackNanos;
             int track = 0;
             Map<String, Object> first = null;
             Map<String, Object> last = null;
@@ -62,12 +64,12 @@ final class Soak {
                             "Soak Artist",
                             "Soak Album",
                             200_000,
-                            0x100000 + track * 977 % 0xEFFFFF,
+                            covers ? 0x100000 + track * 977 % 0xEFFFFF : null,
                             false);
                     if (track % 5 == 0) {
                         publisher.state(track % 10 == 0 ? "paused" : "playing");
                     }
-                    nextTrack = now + 5_000_000_000L;
+                    nextTrack = now + trackNanos;
                 }
                 if (idle) {
                     LockSupport.parkNanos(200_000_000L);
