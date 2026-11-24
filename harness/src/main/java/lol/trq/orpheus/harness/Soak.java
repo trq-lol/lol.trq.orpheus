@@ -2,18 +2,37 @@
 package lol.trq.orpheus.harness;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.LockSupport;
 import lol.trq.orpheus.AppRules;
 import lol.trq.orpheus.Orpheus;
 
 /**
- * Runs the library against a publisher that keeps changing tracks, and samples resource use. The first sample is
- * taken a few seconds after the start; growth is judged between the first and the last sample.
+ * Runs the library against a publisher that keeps changing tracks, and samples resource use. Growth is judged between
+ * the medians of the first and the last five samples after the warm-up.
  */
 final class Soak {
     private Soak() {}
+
+    private static long limit(String key) {
+        return switch (key) {
+            case "privateBytes" -> 4L << 20;
+            case "residentBytes" -> 16L << 20;
+            default -> 2;
+        };
+    }
+
+    private static long median(List<Map<String, Object>> samples, String key) {
+        long[] values = samples.stream()
+                .filter(s -> s.get(key) instanceof Number)
+                .mapToLong(s -> ((Number) s.get(key)).longValue())
+                .sorted()
+                .toArray();
+        return values.length == 0 ? 0 : values[values.length / 2];
+    }
 
     static int run(Map<String, String> options) throws Exception {
         double minutes = Double.parseDouble(options.getOrDefault("minutes", "60"));
@@ -38,6 +57,9 @@ final class Soak {
             long nextSample = System.nanoTime();
             long nextTrack = System.nanoTime() + trackNanos;
             int track = 0;
+            double warmup =
+                    Double.parseDouble(options.getOrDefault("warmup", Double.toString(Math.min(10, minutes / 4))));
+            List<Map<String, Object>> judged = new ArrayList<>();
             Map<String, Object> first = null;
             Map<String, Object> last = null;
             long cpuAtStart = -1;
@@ -55,6 +77,9 @@ final class Soak {
                         cpuAtStart = ((Number) last.get("cpuMillis")).longValue();
                     }
                     System.out.println(Json.write(last));
+                    if (((Number) last.get("minute")).doubleValue() >= warmup) {
+                        judged.add(last);
+                    }
                     nextSample = now + sampleEverySeconds * 1_000_000_000L;
                 }
                 if (!idle && now >= nextTrack) {
@@ -89,10 +114,12 @@ final class Soak {
                 for (String key :
                         new String[] {"javaThreads", "osThreads", "handles", "children", "residentBytes", "privateBytes"
                         }) {
-                    if (first.get(key) instanceof Number a && last.get(key) instanceof Number b) {
-                        summary.put(key + "Growth", b.longValue() - a.longValue());
-                        boolean count = !key.endsWith("Bytes");
-                        grew |= count ? b.longValue() - a.longValue() > 2 : b.longValue() - a.longValue() > 16L << 20;
+                    if (!judged.isEmpty() && last.get(key) instanceof Number) {
+                        int window = Math.min(5, (judged.size() + 1) / 2);
+                        long growth = median(judged.subList(judged.size() - window, judged.size()), key)
+                                - median(judged.subList(0, window), key);
+                        summary.put(key + "Growth", growth);
+                        grew |= growth > limit(key);
                     }
                 }
                 long cpu = ((Number) last.get("cpuMillis")).longValue() - cpuAtStart;
@@ -100,7 +127,11 @@ final class Soak {
                         ((Number) last.get("minute")).doubleValue() - ((Number) first.get("minute")).doubleValue();
                 summary.put("cpuPercentOfOneCore", wall <= 0 ? -1 : Math.round(cpu / (wall * 600.0) * 1000) / 1000.0);
             }
-            summary.put("status", grew ? "fail" : "pass");
+            if (judged.size() < 2) {
+                summary.put("note", "too short to judge growth");
+            }
+            summary.put("warmupMinutes", warmup);
+            summary.put("status", grew || judged.size() < 2 ? "fail" : "pass");
             System.out.println(Json.write(summary));
             return grew ? 1 : 0;
         } finally {

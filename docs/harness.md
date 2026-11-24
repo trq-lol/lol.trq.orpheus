@@ -20,7 +20,7 @@ H=harness/build/install/harness/bin/harness
 $H live                                     # all scenarios
 $H live --only controls                     # one scenario
 $H watch --all                              # print what real players report
-$H soak --minutes 60                        # resource use
+$H soak --minutes 60                        # resource use; JAVA_OPTS=-Xint leaves out compiler memory
 $H soak --idle --minutes 10
 $H soak --minutes 15 --track-millis 100     # growth per track; add --no-covers
 ```
