@@ -447,6 +447,12 @@ final class Scenarios {
         }
     }
 
+    /** Whether this is the test player. Real players may be open at the same time. */
+    private boolean mine(Playback playback) {
+        return playback.isPresent()
+                && AppRules.matches(publisher.appRule(), playback.app().id());
+    }
+
     private void filtering(Map<String, Object> numbers) throws Exception {
         try (Probe probe = start(
                 Orpheus.builder().source(rig.source()).apps(AppRules.defaults()).build())) {
@@ -460,13 +466,18 @@ final class Scenarios {
                             >= 0,
                     "the session is not even listed");
             LockSupport.parkNanos(300_000_000L);
-            check(!probe.orpheus.playback().isPresent(), "an app that is not on the allow list was shown");
-            check(probe.orpheus.sessions().stream().noneMatch(s -> s.visible()), "a hidden session is marked visible");
+            check(!mine(probe.orpheus.playback()), "an app that is not on the allow list was shown");
+            check(
+                    probe.orpheus.sessions().stream()
+                            .noneMatch(s -> s.visible()
+                                    && AppRules.matches(
+                                            publisher.appRule(), s.app().id())),
+                    "a hidden session is marked visible");
 
             probe.orpheus.apps(AppRules.defaults().allow(publisher.appRule()));
             check(probe.await(s -> shows(s, TITLE), 5000) >= 0, "allowing the app did not show it");
             probe.orpheus.apps(AppRules.all().deny(publisher.appRule()));
-            check(probe.await(s -> !s.playback().isPresent(), 5000) >= 0, "denying the app did not hide it");
+            check(probe.await(s -> !mine(s.playback()), 5000) >= 0, "denying the app did not hide it");
 
             if (rig.reportsKind()) {
                 probe.orpheus.apps(AppRules.none().allow(publisher.appRule()));
@@ -597,7 +608,7 @@ final class Scenarios {
     private void startStop(Map<String, Object> numbers) throws Exception {
         playTrack(TITLE, ARTIST, 0);
         Orpheus orpheus = builder().build();
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 100; i++) {
             try (Probe probe = start(orpheus)) {
                 check(probe.await(s -> shows(s, TITLE), 5000) >= 0, "warm-up cycle " + i + " saw no session");
             }

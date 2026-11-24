@@ -487,18 +487,7 @@ public final class MacNowPlaying implements Source, Transport {
                 : kind.contains("audio") || Boolean.TRUE.equals(state.get("isMusicApp"))
                         ? MediaKind.MUSIC
                         : MediaKind.UNKNOWN;
-        Set<Control> controls = new HashSet<>(List.of(
-                Control.PLAY,
-                Control.PAUSE,
-                Control.TOGGLE,
-                Control.STOP,
-                Control.PREVIOUS,
-                Control.SEEK,
-                Control.SHUFFLE,
-                Control.REPEAT));
-        if (!Boolean.TRUE.equals(state.get("prohibitsSkip"))) {
-            controls.add(Control.NEXT);
-        }
+        Set<Control> controls = controlsOf(state);
         String artist = text(state.get("artist"));
         String identifier = text(state.get("uniqueIdentifier"));
         return new SessionUpdate(
@@ -518,12 +507,12 @@ public final class MacNowPlaying implements Source, Transport {
                 elapsedMicros / 1000,
                 nanoTime - ageMicros * 1000,
                 rate,
-                switch ((int) micros(state.get("shuffleMode"))) {
+                switch ((int) modeOf(state, "shuffleMode", 26, "kMRMediaRemoteCommandInfoShuffleMode")) {
                     case 1 -> Shuffle.OFF;
                     case 2, 3 -> Shuffle.ON;
                     default -> Shuffle.UNKNOWN;
                 },
-                switch ((int) micros(state.get("repeatMode"))) {
+                switch ((int) modeOf(state, "repeatMode", 25, "kMRMediaRemoteCommandInfoRepeatMode")) {
                     case 1 -> Repeat.OFF;
                     case 2 -> Repeat.ONE;
                     case 3 -> Repeat.ALL;
@@ -533,6 +522,68 @@ public final class MacNowPlaying implements Source, Transport {
                 controls,
                 cover.of(state.get("artworkData")),
                 null);
+    }
+
+    /**
+     * The controls the player has enabled, from the helper's list of supported commands. Older helpers send no list, so
+     * every control is assumed then, less next when the player prohibits skipping.
+     */
+    static Set<Control> controlsOf(Map<String, Object> state) {
+        Set<Control> controls = new HashSet<>();
+        if (!(state.get("supportedCommands") instanceof List<?> commands)) {
+            controls.addAll(List.of(
+                    Control.PLAY,
+                    Control.PAUSE,
+                    Control.TOGGLE,
+                    Control.STOP,
+                    Control.PREVIOUS,
+                    Control.SEEK,
+                    Control.SHUFFLE,
+                    Control.REPEAT));
+            if (!Boolean.TRUE.equals(state.get("prohibitsSkip"))) {
+                controls.add(Control.NEXT);
+            }
+            return controls;
+        }
+        for (Object entry : commands) {
+            if (!(entry instanceof Map<?, ?> command) || !Boolean.TRUE.equals(command.get("enabled"))) {
+                continue;
+            }
+            Control control =
+                    switch (command.get("id") instanceof Double id ? id.intValue() : -1) {
+                        case 0 -> Control.PLAY;
+                        case 1 -> Control.PAUSE;
+                        case 2 -> Control.TOGGLE;
+                        case 3 -> Control.STOP;
+                        case 4 -> Control.NEXT;
+                        case 5 -> Control.PREVIOUS;
+                        case 24 -> Control.SEEK;
+                        case 25 -> Control.REPEAT;
+                        case 26 -> Control.SHUFFLE;
+                        default -> null;
+                    };
+            if (control != null) {
+                controls.add(control);
+            }
+        }
+        return controls;
+    }
+
+    /** A shuffle or repeat mode, from the metadata or else from the options of its supported command. 0 when unknown. */
+    static long modeOf(Map<String, Object> state, String key, int commandId, String option) {
+        long mode = micros(state.get(key));
+        if (mode != 0 || !(state.get("supportedCommands") instanceof List<?> commands)) {
+            return mode;
+        }
+        for (Object entry : commands) {
+            if (entry instanceof Map<?, ?> command
+                    && command.get("id") instanceof Double id
+                    && id.intValue() == commandId
+                    && command.get("options") instanceof Map<?, ?> options) {
+                return micros(options.get(option));
+            }
+        }
+        return 0;
     }
 
     private static String appOf(Map<String, Object> state) {
@@ -581,6 +632,12 @@ public final class MacNowPlaying implements Source, Transport {
 
     private static String text(Object value) {
         return value instanceof String s ? s : "";
+    }
+
+    /** Whether the helper refused a command because the player does not support it or has it disabled. */
+    static boolean rejected(String output) {
+        return output.contains("is not supported by the current now playing application")
+                || output.contains("is disabled with the current now playing application");
     }
 
     /** A whole number from a JSON number; 0 for anything else, including infinities. */
@@ -663,6 +720,9 @@ public final class MacNowPlaying implements Source, Transport {
                 return ControlResult.DONE;
             }
             synchronized (output) {
+                if (rejected(output.toString())) {
+                    return ControlResult.unsupported("the player does not accept it");
+                }
                 return ControlResult.failed(
                         output.length() == 0
                                 ? "the helper exited with code " + process.exitValue()
