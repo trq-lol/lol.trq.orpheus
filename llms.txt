@@ -6,46 +6,46 @@
 
 ## Docs
 
-- [README](README.md): requirements, artifacts, usage, privacy, limitations
-- [Platforms](docs/platforms.md): what each system provides, app ids, limits, transforming the jars
-- [Harness](docs/harness.md): the live checks and how to run them
-- [Benchmarks](BENCHMARKS.md): JMH numbers and measured targets
-- [CLAUDE.md](CLAUDE.md): mental model, patterns that matter, traps
-- [CHANGELOG](CHANGELOG.md): release notes
-- [CONTRIBUTING](CONTRIBUTING.md): commit and test conventions
-- [NOTICE](NOTICE.md): third-party licenses
-- [DISCLAIMER](DISCLAIMER.md): non-affiliation, private interfaces, copyright of lyrics and art
+- [README](https://github.com/trq-lol/lol.trq.orpheus/blob/main/README.md): requirements, artifacts, usage, privacy, limitations
+- [Platforms](https://github.com/trq-lol/lol.trq.orpheus/blob/main/docs/platforms.md): what each system provides, app ids, limits, transforming the jars
+- [Harness](https://github.com/trq-lol/lol.trq.orpheus/blob/main/docs/harness.md): the live checks and how to run them
+- [Benchmarks](https://github.com/trq-lol/lol.trq.orpheus/blob/main/BENCHMARKS.md): JMH numbers and measured targets
+- [CLAUDE.md](https://github.com/trq-lol/lol.trq.orpheus/blob/main/CLAUDE.md): mental model, patterns that matter, traps
+- [CHANGELOG](https://github.com/trq-lol/lol.trq.orpheus/blob/main/CHANGELOG.md): release notes
+- [CONTRIBUTING](https://github.com/trq-lol/lol.trq.orpheus/blob/main/CONTRIBUTING.md): commit and test conventions
+- [NOTICE](https://github.com/trq-lol/lol.trq.orpheus/blob/main/NOTICE.md): third-party licenses
+- [DISCLAIMER](https://github.com/trq-lol/lol.trq.orpheus/blob/main/DISCLAIMER.md): non-affiliation, private interfaces, copyright of lyrics and art
 
 ## Core source
 
-- [Orpheus](core/src/main/java/lol/trq/orpheus/Orpheus.java): entry point, builder, threads, command routing
-- [Engine](core/src/main/java/lol/trq/orpheus/internal/Engine.java): selection, merging, position anchoring, events
-- [Playback](core/src/main/java/lol/trq/orpheus/Playback.java), [Track](core/src/main/java/lol/trq/orpheus/Track.java), [Timeline](core/src/main/java/lol/trq/orpheus/Timeline.java), [Snapshot](core/src/main/java/lol/trq/orpheus/Snapshot.java): the immutable model
-- [Controls](core/src/main/java/lol/trq/orpheus/Controls.java): commands with typed results
-- [AppRules](core/src/main/java/lol/trq/orpheus/AppRules.java): which applications are visible
-- [Source](core/src/main/java/lol/trq/orpheus/source/Source.java), [SessionUpdate](core/src/main/java/lol/trq/orpheus/source/SessionUpdate.java), [Transport](core/src/main/java/lol/trq/orpheus/source/Transport.java): what a source implements
-- [PushSource](core/src/main/java/lol/trq/orpheus/source/PushSource.java): a source fed by the program
-- [Lrc](core/src/main/java/lol/trq/orpheus/lyrics/Lrc.java), [Lyrics](core/src/main/java/lol/trq/orpheus/lyrics/Lyrics.java), [LyricsMatcher](core/src/main/java/lol/trq/orpheus/lyrics/LyricsMatcher.java), [LocalLyrics](core/src/main/java/lol/trq/orpheus/lyrics/LocalLyrics.java), [AudioTags](core/src/main/java/lol/trq/orpheus/lyrics/AudioTags.java): lyrics
-- [CoverDecoder](core/src/main/java/lol/trq/orpheus/cover/CoverDecoder.java), [Palette](core/src/main/java/lol/trq/orpheus/cover/Palette.java), [CoverCache](core/src/main/java/lol/trq/orpheus/cover/CoverCache.java): covers
-- [NativeFiles](core/src/main/java/lol/trq/orpheus/internal/NativeFiles.java): verified extraction of bundled native files
+- [Orpheus](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/Orpheus.java): entry point, builder, threads, command routing
+- [Engine](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/internal/Engine.java): selection, merging, position anchoring, events
+- [Playback](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/Playback.java), [Track](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/Track.java), [Timeline](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/Timeline.java), [Snapshot](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/Snapshot.java): the immutable model
+- [Controls](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/Controls.java): commands with typed results
+- [AppRules](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/AppRules.java): which applications are visible
+- [Source](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/source/Source.java), [SessionUpdate](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/source/SessionUpdate.java), [Transport](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/source/Transport.java): what a source implements
+- [PushSource](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/source/PushSource.java): a source fed by the program
+- [Lrc](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/lyrics/Lrc.java), [Lyrics](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/lyrics/Lyrics.java), [LyricsMatcher](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/lyrics/LyricsMatcher.java), [LocalLyrics](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/lyrics/LocalLyrics.java), [AudioTags](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/lyrics/AudioTags.java): lyrics
+- [CoverDecoder](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/cover/CoverDecoder.java), [Palette](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/cover/Palette.java), [CoverCache](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/cover/CoverCache.java): covers
+- [NativeFiles](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/main/java/lol/trq/orpheus/internal/NativeFiles.java): verified extraction of bundled native files
 
 ## Platform source
 
-- [WindowsSessions](windows/src/main/java/lol/trq/orpheus/windows/WindowsSessions.java), [Bridge](windows/src/main/java/lol/trq/orpheus/windows/Bridge.java), [Blob](windows/src/main/java/lol/trq/orpheus/windows/Blob.java): Windows, Java side
-- [sessions.rs](native/orpheus-windows/src/sessions.rs), [jni.rs](native/orpheus-windows/src/jni.rs), [wire.rs](native/orpheus-windows/src/wire.rs): Windows, native side
-- [MprisSource](linux/src/main/java/lol/trq/orpheus/linux/MprisSource.java), [Bus](linux/src/main/java/lol/trq/orpheus/linux/dbus/Bus.java), [Wire](linux/src/main/java/lol/trq/orpheus/linux/dbus/Wire.java), [Message](linux/src/main/java/lol/trq/orpheus/linux/dbus/Message.java): Linux
-- [MacNowPlaying](macos/src/main/java/lol/trq/orpheus/macos/MacNowPlaying.java): macOS
-- [SystemSessions](system/src/main/java/lol/trq/orpheus/system/SystemSessions.java): picks by operating system
+- [WindowsSessions](https://github.com/trq-lol/lol.trq.orpheus/blob/main/windows/src/main/java/lol/trq/orpheus/windows/WindowsSessions.java), [Bridge](https://github.com/trq-lol/lol.trq.orpheus/blob/main/windows/src/main/java/lol/trq/orpheus/windows/Bridge.java), [Blob](https://github.com/trq-lol/lol.trq.orpheus/blob/main/windows/src/main/java/lol/trq/orpheus/windows/Blob.java): Windows, Java side
+- [sessions.rs](https://github.com/trq-lol/lol.trq.orpheus/blob/main/native/orpheus-windows/src/sessions.rs), [jni.rs](https://github.com/trq-lol/lol.trq.orpheus/blob/main/native/orpheus-windows/src/jni.rs), [wire.rs](https://github.com/trq-lol/lol.trq.orpheus/blob/main/native/orpheus-windows/src/wire.rs): Windows, native side
+- [MprisSource](https://github.com/trq-lol/lol.trq.orpheus/blob/main/linux/src/main/java/lol/trq/orpheus/linux/MprisSource.java), [Bus](https://github.com/trq-lol/lol.trq.orpheus/blob/main/linux/src/main/java/lol/trq/orpheus/linux/dbus/Bus.java), [Wire](https://github.com/trq-lol/lol.trq.orpheus/blob/main/linux/src/main/java/lol/trq/orpheus/linux/dbus/Wire.java), [Message](https://github.com/trq-lol/lol.trq.orpheus/blob/main/linux/src/main/java/lol/trq/orpheus/linux/dbus/Message.java): Linux
+- [MacNowPlaying](https://github.com/trq-lol/lol.trq.orpheus/blob/main/macos/src/main/java/lol/trq/orpheus/macos/MacNowPlaying.java): macOS
+- [SystemSessions](https://github.com/trq-lol/lol.trq.orpheus/blob/main/system/src/main/java/lol/trq/orpheus/system/SystemSessions.java): picks by operating system
 
 ## Examples
 
-- [OrpheusTest](core/src/test/java/lol/trq/orpheus/OrpheusTest.java): start, commands, push source, stop
-- [EngineTest](core/src/test/java/lol/trq/orpheus/internal/EngineTest.java): selection, merging, position, lyrics and cover rules
-- [LrcTest](core/src/test/java/lol/trq/orpheus/lyrics/LrcTest.java): lyric formats and timing
-- [Scenarios](harness/src/main/java/lol/trq/orpheus/harness/Scenarios.java): live use against a real session
+- [OrpheusTest](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/test/java/lol/trq/orpheus/OrpheusTest.java): start, commands, push source, stop
+- [EngineTest](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/test/java/lol/trq/orpheus/internal/EngineTest.java): selection, merging, position, lyrics and cover rules
+- [LrcTest](https://github.com/trq-lol/lol.trq.orpheus/blob/main/core/src/test/java/lol/trq/orpheus/lyrics/LrcTest.java): lyric formats and timing
+- [Scenarios](https://github.com/trq-lol/lol.trq.orpheus/blob/main/harness/src/main/java/lol/trq/orpheus/harness/Scenarios.java): live use against a real session
 
 ## Optional
 
-- [SECURITY](SECURITY.md)
-- [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md)
+- [SECURITY](https://github.com/trq-lol/lol.trq.orpheus/blob/main/SECURITY.md)
+- [CODE_OF_CONDUCT](https://github.com/trq-lol/lol.trq.orpheus/blob/main/CODE_OF_CONDUCT.md)
 - [LICENSE](LICENSE)
