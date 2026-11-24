@@ -24,7 +24,7 @@ On Java 24 and newer, start with `--enable-native-access=ALL-UNNAMED` to avoid a
 
 ## Install
 
-There is no release yet. Artifacts will be on GitHub Packages, which needs a GitHub token with `read:packages`:
+Artifacts are on GitHub Packages, which needs a GitHub token with `read:packages`:
 
 ```groovy
 repositories {

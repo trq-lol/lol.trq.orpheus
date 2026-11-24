@@ -39,7 +39,9 @@ Linux is Ubuntu 24.04 under WSL 2 with Java 21. macOS is 26.5 on an M2.
 
 ## Soak
 
-A run fails if its last sample exceeds the first by more than 2 threads or handles, or 16 MiB.
+Undated runs and those of 2026-11-24 marked "failed" failed if the last sample exceeded the first by more than 2 threads or
+handles, or 16 MiB. The check now compares the medians of the first and last five samples after 10 minutes: 2 threads or
+handles, 16 MiB resident, 4 MiB private.
 
 | Run | Check | Memory after start |
 |---|---|---|
@@ -53,6 +55,7 @@ A run fails if its last sample exceeds the first by more than 2 threads or handl
 | Linux, 15 minutes, 9 tracks/s | failed: resident +24.4 MiB | +0.2 MiB, minute 5 to 14 |
 | Windows, 1 hour, 2026-11-24 | failed: handles +49, resident +21.3 MiB | heap +10.8 MiB: cover cache filling |
 | Windows, 3 hours, 2026-11-24 | failed: handles +16 | private +8.6 MiB, minute 15 to 165 |
+| Windows, 1 hour, 2026-11-24, `-Xint`, new check | passed: handles -4 | private +0.1 MiB, minute 10 to 60 |
 
 The fast runs show no growth per track. The fast runs and the 3-hour macOS run used newer code than the other undated
 ones. The 3-hour, fast and dated runs used a fixed 48 MiB heap.
@@ -61,6 +64,11 @@ On Windows, private memory grows 2 to 7 MiB per hour in the soak; a plain JVM do
 memory in use stayed within 0.8 MiB (one sample was 4 MiB higher) while the memory held by the allocator grew 3 to 4 MiB
 per hour. In a 3-hour run of
 the library alone the held memory was level for the last 55 minutes. Handles and threads were flat after start.
+
+Without the JIT compiler (`-Xint`) the library does not grow. In 75 minutes side by side, private memory from minute 8 to
+72: native bridge alone +0.5 MiB, library with `-Xint` +0.7 MiB, library +4.7 MiB, plain JVM -0.2 MiB. A second run of the
+library with the JIT grew 0.7 MiB from minute 12 to 60, swinging by up to 1.6 MiB a minute. The growth is therefore put down
+to the JIT compiler; single steps did not follow the number of compilations in a log.
 
 ## macOS
 
