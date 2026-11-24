@@ -58,7 +58,8 @@ The fast runs show no growth per track. The fast runs and the 3-hour macOS run u
 ones. The 3-hour, fast and dated runs used a fixed 48 MiB heap.
 
 On Windows, private memory grows 2 to 7 MiB per hour in the soak; a plain JVM does not grow. Over 90 minutes the native
-memory in use stayed within 0.8 MiB while the memory held by the allocator grew 3 to 4 MiB per hour. In a 3-hour run of
+memory in use stayed within 0.8 MiB (one sample was 4 MiB higher) while the memory held by the allocator grew 3 to 4 MiB
+per hour. In a 3-hour run of
 the library alone the held memory was level for the last 55 minutes. Handles and threads were flat after start.
 
 ## macOS
