@@ -1,6 +1,8 @@
-# Builds the site. Manual only until the project is public: deployment is not enabled.
+# Builds the site and publishes it.
 name: pages
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,18 +37,16 @@ jobs:
         with:
           path: ./_site
 
-  # To publish: enable Pages (source: GitHub Actions) with the custom domain, add `push: branches: [main]` above,
-  # and uncomment this job.
-  # deploy:
-  #   if: github.ref == 'refs/heads/main'
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     pages: write
-  #     id-token: write
-  #   environment:
-  #     name: github-pages
-  #     url: ${{ steps.deployment.outputs.page_url }}
-  #   steps:
-  #     - id: deployment
-  #       uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
