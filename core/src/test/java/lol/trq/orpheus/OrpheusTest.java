@@ -450,6 +450,8 @@ class OrpheusTest {
 
     @Test
     void aSourceThatNeverStopsDoesNotBlockALaterStart() throws Exception {
+        CountDownLatch starts = new CountDownLatch(2);
+        CountDownLatch restarted = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         lol.trq.orpheus.source.Source stuck = new lol.trq.orpheus.source.Source() {
             @Override
@@ -458,7 +460,12 @@ class OrpheusTest {
             }
 
             @Override
-            public void start(lol.trq.orpheus.source.SourceSink sink) {}
+            public void start(lol.trq.orpheus.source.SourceSink sink) {
+                starts.countDown();
+                if (starts.getCount() == 0) {
+                    restarted.countDown();
+                }
+            }
 
             @Override
             public void stop() {
@@ -483,8 +490,9 @@ class OrpheusTest {
         assertEquals(
                 SourceStatus.State.UNAVAILABLE,
                 orpheus.sources().get(0).status().state());
-        orpheus.stop();
         release.countDown();
+        await(restarted);
+        orpheus.stop();
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (libraryThreads() > 0 && System.nanoTime() < deadline) {
             Thread.sleep(5);

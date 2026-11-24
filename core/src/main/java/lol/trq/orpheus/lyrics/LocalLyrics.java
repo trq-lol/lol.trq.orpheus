@@ -114,15 +114,17 @@ public final class LocalLyrics implements LyricsProvider, AutoCloseable {
         if (thread != null) {
             thread.interrupt();
             try {
-                thread.join(5000);
+                thread.join(3000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }
         synchronized (lock) {
             // a later lookup indexes again, so the provider survives a stop and a new start
-            started = false;
-            indexer = null;
+            if (indexer == thread) {
+                started = false;
+                indexer = null;
+            }
         }
     }
 

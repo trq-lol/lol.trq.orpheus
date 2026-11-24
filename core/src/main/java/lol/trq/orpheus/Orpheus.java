@@ -6,6 +6,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -65,7 +66,7 @@ public final class Orpheus implements AutoCloseable {
     private final long commandTimeoutMillis;
     private final CoverCache covers;
     private final List<Consumer<? super OrpheusEvent>> listeners = new CopyOnWriteArrayList<>();
-    private final Set<Object> stopping = ConcurrentHashMap.newKeySet();
+    private final Map<Object, CompletableFuture<Void>> stopping = new ConcurrentHashMap<>();
     private final Object lifecycle = new Object();
 
     private volatile Snapshot snapshot = Snapshot.NONE;
@@ -338,6 +339,7 @@ public final class Orpheus implements AutoCloseable {
         final CompletableFuture<Void> sourcesStopped = new CompletableFuture<>();
         final CompletableFuture<Void> previous;
         private final ArrayDeque<OrpheusEvent> waiting = new ArrayDeque<>();
+        private long dropped;
         private final AtomicReference<Runnable> nextCover = new AtomicReference<>();
         private final AtomicReference<Runnable> nextLyrics = new AtomicReference<>();
         volatile boolean ended;
@@ -385,28 +387,37 @@ public final class Orpheus implements AutoCloseable {
                 engine.pin(pinSource, pinApp);
                 for (int i = 0; i < sources.size(); i++) {
                     int index = i;
-                    SourceSink sink = new SourceSink() {
-                        @Override
-                        public void status(SourceStatus status) {
-                            submit(hub, () -> engine.status(index, status));
-                        }
-
-                        @Override
-                        public void sessions(List<SessionUpdate> list) {
-                            submit(hub, () -> engine.sessions(index, list));
-                        }
-                    };
-                    if (stopping.contains(sources.get(i))) {
-                        engine.status(i, SourceStatus.unavailable("its previous stop has not finished"));
-                        continue;
-                    }
-                    try {
-                        sources.get(i).start(sink);
-                    } catch (RuntimeException | LinkageError e) {
-                        engine.status(i, SourceStatus.unavailable(e.toString()));
+                    CompletableFuture<Void> stop = stopping.get(sources.get(i));
+                    if (stop == null) {
+                        startSource(index);
+                    } else {
+                        engine.status(index, SourceStatus.unavailable("its previous stop has not finished"));
+                        stop.whenComplete((done, error) -> submit(hub, () -> startSource(index)));
                     }
                 }
             });
+        }
+
+        private void startSource(int index) {
+            if (ended) {
+                return;
+            }
+            SourceSink sink = new SourceSink() {
+                @Override
+                public void status(SourceStatus status) {
+                    submit(hub, () -> engine.status(index, status));
+                }
+
+                @Override
+                public void sessions(List<SessionUpdate> list) {
+                    submit(hub, () -> engine.sessions(index, list));
+                }
+            };
+            try {
+                sources.get(index).start(sink);
+            } catch (RuntimeException | LinkageError e) {
+                engine.status(index, SourceStatus.unavailable(e.toString()));
+            }
         }
 
         void end() {
@@ -416,9 +427,11 @@ public final class Orpheus implements AutoCloseable {
                     if (wake != null) {
                         wake.cancel(false);
                     }
+                    List<Thread> stops = new ArrayList<>();
                     for (Source source : begun ? sources : List.<Source>of()) {
-                        stopBounded(source, "source " + source.id(), source::stop);
+                        stops.add(stopAside(source, "source " + source.id(), source::stop));
                     }
+                    joinStops(stops);
                     for (Runnable fail : failPending) {
                         fail.run();
                     }
@@ -449,11 +462,13 @@ public final class Orpheus implements AutoCloseable {
                     Thread.currentThread().interrupt();
                 }
             }
+            List<Thread> closes = new ArrayList<>();
             for (LyricsProvider provider : providers) {
                 if (provider instanceof AutoCloseable closeable) {
-                    stopBounded(provider, "a lyrics provider", closeable);
+                    closes.add(stopAside(provider, "a lyrics provider", closeable));
                 }
             }
+            joinStops(closes);
             hub.shutdown();
             if (ownEvents != null) {
                 ownEvents.shutdown();
@@ -480,9 +495,10 @@ public final class Orpheus implements AutoCloseable {
         }
 
         /** Runs a stop on its own thread, so one that hangs cannot block the others or a later start. */
-        private void stopBounded(Object owner, String what, AutoCloseable stop) {
-            if (!stopping.add(owner)) {
-                return;
+        private Thread stopAside(Object owner, String what, AutoCloseable stop) {
+            CompletableFuture<Void> stopped = new CompletableFuture<>();
+            if (stopping.putIfAbsent(owner, stopped) != null) {
+                return null;
             }
             Thread thread = factory("orpheus-stop").newThread(() -> {
                 try {
@@ -491,16 +507,28 @@ public final class Orpheus implements AutoCloseable {
                     debug(what + " failed to stop: " + e);
                 } finally {
                     stopping.remove(owner);
+                    stopped.complete(null);
                 }
             });
             thread.start();
-            try {
-                thread.join(STOP_MILLIS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            if (thread.isAlive()) {
-                debug(what + " is still stopping");
+            return thread;
+        }
+
+        private void joinStops(List<Thread> stops) {
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STOP_MILLIS);
+            for (Thread thread : stops) {
+                if (thread == null) {
+                    continue;
+                }
+                try {
+                    thread.join(Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                if (thread.isAlive()) {
+                    debug("a source or lyrics provider is still stopping");
+                }
             }
         }
 
@@ -609,20 +637,20 @@ public final class Orpheus implements AutoCloseable {
             if (listeners.isEmpty()) {
                 return;
             }
-            // one task is queued per waiting event, so a full queue needs no further task
+            // a task delivers everything that waits; a full queue still gets one at times, as executors may drop tasks
             synchronized (waiting) {
                 boolean full = waiting.size() >= MAX_WAITING_EVENTS;
                 if (full) {
                     waiting.poll();
                 }
                 waiting.add(event);
-                if (full) {
+                if (full && ++dropped % MAX_WAITING_EVENTS != 0) {
                     return;
                 }
             }
             try {
-                events.execute(this::deliverNext);
-            } catch (RejectedExecutionException e) {
+                events.execute(this::deliver);
+            } catch (RuntimeException e) {
                 synchronized (waiting) {
                     waiting.pollLast();
                 }
@@ -630,19 +658,21 @@ public final class Orpheus implements AutoCloseable {
             }
         }
 
-        private void deliverNext() {
-            OrpheusEvent event;
-            synchronized (waiting) {
-                event = waiting.poll();
-            }
-            if (event == null || ended) {
-                return;
-            }
-            for (Consumer<? super OrpheusEvent> listener : listeners) {
-                try {
-                    listener.accept(event);
-                } catch (RuntimeException e) {
-                    debug("listener failed: " + e);
+        private void deliver() {
+            while (!ended) {
+                OrpheusEvent event;
+                synchronized (waiting) {
+                    event = waiting.poll();
+                }
+                if (event == null) {
+                    return;
+                }
+                for (Consumer<? super OrpheusEvent> listener : listeners) {
+                    try {
+                        listener.accept(event);
+                    } catch (RuntimeException e) {
+                        debug("listener failed: " + e);
+                    }
                 }
             }
         }
