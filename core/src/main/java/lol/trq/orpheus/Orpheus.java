@@ -2,6 +2,7 @@
 package lol.trq.orpheus;
 
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -18,6 +19,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -49,9 +51,12 @@ import lol.trq.orpheus.source.Transport;
  * <p>Reading ({@link #snapshot()}, {@link #playback()}, {@link #lyrics()}, {@link #cover()}) is safe from any thread,
  * never blocks and allocates nothing. Listeners run on the executor given to the builder, or on a library thread, in
  * order. Command futures complete on a library thread. Nothing runs before {@link #start()} and no thread survives
- * {@link #stop()}.
+ * {@link #stop()}, unless a source or a lyrics provider hangs for more than five seconds while it stops.
  */
 public final class Orpheus implements AutoCloseable {
+    private static final int MAX_WAITING_EVENTS = 256;
+    private static final long STOP_MILLIS = 5000;
+
     private final List<Source> sources;
     private final List<LyricsProvider> providers;
     private final Executor userExecutor;
@@ -60,6 +65,7 @@ public final class Orpheus implements AutoCloseable {
     private final long commandTimeoutMillis;
     private final CoverCache covers;
     private final List<Consumer<? super OrpheusEvent>> listeners = new CopyOnWriteArrayList<>();
+    private final Set<Object> stopping = ConcurrentHashMap.newKeySet();
     private final Object lifecycle = new Object();
 
     private volatile Snapshot snapshot = Snapshot.NONE;
@@ -188,7 +194,10 @@ public final class Orpheus implements AutoCloseable {
         return current;
     }
 
-    /** Registers a listener for every event. */
+    /**
+     * Registers a listener for every event. If listeners fall more than 256 events behind, the oldest waiting events
+     * are dropped; every event carries the state of its moment, so the newest one is always current.
+     */
     public Subscription listen(Consumer<? super OrpheusEvent> listener) {
         listeners.add(listener);
         return () -> listeners.remove(listener);
@@ -328,6 +337,9 @@ public final class Orpheus implements AutoCloseable {
         final CompletableFuture<Void> finished = new CompletableFuture<>();
         final CompletableFuture<Void> sourcesStopped = new CompletableFuture<>();
         final CompletableFuture<Void> previous;
+        private final ArrayDeque<OrpheusEvent> waiting = new ArrayDeque<>();
+        private final AtomicReference<Runnable> nextCover = new AtomicReference<>();
+        private final AtomicReference<Runnable> nextLyrics = new AtomicReference<>();
         volatile boolean ended;
         private boolean begun;
         private ScheduledFuture<?> wake;
@@ -384,6 +396,10 @@ public final class Orpheus implements AutoCloseable {
                             submit(hub, () -> engine.sessions(index, list));
                         }
                     };
+                    if (stopping.contains(sources.get(i))) {
+                        engine.status(i, SourceStatus.unavailable("its previous stop has not finished"));
+                        continue;
+                    }
                     try {
                         sources.get(i).start(sink);
                     } catch (RuntimeException | LinkageError e) {
@@ -401,11 +417,7 @@ public final class Orpheus implements AutoCloseable {
                         wake.cancel(false);
                     }
                     for (Source source : begun ? sources : List.<Source>of()) {
-                        try {
-                            source.stop();
-                        } catch (RuntimeException | LinkageError e) {
-                            debug("source " + source.id() + " failed to stop: " + e);
-                        }
+                        stopBounded(source, "source " + source.id(), source::stop);
                     }
                     for (Runnable fail : failPending) {
                         fail.run();
@@ -439,11 +451,7 @@ public final class Orpheus implements AutoCloseable {
             }
             for (LyricsProvider provider : providers) {
                 if (provider instanceof AutoCloseable closeable) {
-                    try {
-                        closeable.close();
-                    } catch (Exception | LinkageError e) {
-                        debug("lyrics provider failed to close: " + e);
-                    }
+                    stopBounded(provider, "a lyrics provider", closeable);
                 }
             }
             hub.shutdown();
@@ -469,6 +477,31 @@ public final class Orpheus implements AutoCloseable {
                 clear();
                 finished.complete(null);
             });
+        }
+
+        /** Runs a stop on its own thread, so one that hangs cannot block the others or a later start. */
+        private void stopBounded(Object owner, String what, AutoCloseable stop) {
+            if (!stopping.add(owner)) {
+                return;
+            }
+            Thread thread = factory("orpheus-stop").newThread(() -> {
+                try {
+                    stop.close();
+                } catch (Exception | LinkageError e) {
+                    debug(what + " failed to stop: " + e);
+                } finally {
+                    stopping.remove(owner);
+                }
+            });
+            thread.start();
+            try {
+                thread.join(STOP_MILLIS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            if (thread.isAlive()) {
+                debug(what + " is still stopping");
+            }
         }
 
         void dispatch(Playback bound, ControlRequest request, CompletableFuture<ControlResult> result) {
@@ -576,27 +609,59 @@ public final class Orpheus implements AutoCloseable {
             if (listeners.isEmpty()) {
                 return;
             }
+            // one task is queued per waiting event, so a full queue needs no further task
+            synchronized (waiting) {
+                boolean full = waiting.size() >= MAX_WAITING_EVENTS;
+                if (full) {
+                    waiting.poll();
+                }
+                waiting.add(event);
+                if (full) {
+                    return;
+                }
+            }
             try {
-                events.execute(() -> {
-                    if (ended) {
-                        return;
-                    }
-                    for (Consumer<? super OrpheusEvent> listener : listeners) {
-                        try {
-                            listener.accept(event);
-                        } catch (RuntimeException e) {
-                            debug("listener failed: " + e);
-                        }
+                events.execute(this::deliverNext);
+            } catch (RejectedExecutionException e) {
+                synchronized (waiting) {
+                    waiting.pollLast();
+                }
+                debug("event dropped: executor rejected it");
+            }
+        }
+
+        private void deliverNext() {
+            OrpheusEvent event;
+            synchronized (waiting) {
+                event = waiting.poll();
+            }
+            if (event == null || ended) {
+                return;
+            }
+            for (Consumer<? super OrpheusEvent> listener : listeners) {
+                try {
+                    listener.accept(event);
+                } catch (RuntimeException e) {
+                    debug("listener failed: " + e);
+                }
+            }
+        }
+
+        /** Runs the newest task of a slot on the worker; an older one that has not begun is dropped. */
+        private void submitLatest(AtomicReference<Runnable> slot, Runnable task) {
+            if (slot.getAndSet(task) == null) {
+                submit(io, () -> {
+                    Runnable latest = slot.getAndSet(null);
+                    if (latest != null) {
+                        latest.run();
                     }
                 });
-            } catch (RejectedExecutionException e) {
-                debug("event dropped: executor rejected it");
             }
         }
 
         @Override
         public void decodeCover(CoverData data) {
-            submit(io, () -> {
+            submitLatest(nextCover, () -> {
                 Cover cover = CoverDecoder.decode(data.key(), data.bytes(), coverSize);
                 submit(hub, () -> engine.coverDecoded(data.key(), cover));
             });
@@ -607,7 +672,7 @@ public final class Orpheus implements AutoCloseable {
             if (providers.isEmpty()) {
                 return;
             }
-            submit(io, () -> {
+            submitLatest(nextLyrics, () -> {
                 List<Lyrics> found = new ArrayList<>(1);
                 for (LyricsProvider provider : providers) {
                     try {

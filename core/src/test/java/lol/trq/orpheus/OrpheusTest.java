@@ -376,4 +376,119 @@ class OrpheusTest {
         stopper.join(10_000);
         assertEquals("Later", orpheus.playback().track().title(), "the old stop must not blank the new run");
     }
+
+    @Test
+    void aListenerThatFallsBehindGetsTheNewestEvents() throws Exception {
+        FakeSource source = new FakeSource("fake", false);
+        orpheus = Orpheus.builder().source(source).build();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch newest = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger count = new java.util.concurrent.atomic.AtomicInteger();
+        orpheus.listen(event -> {
+            entered.countDown();
+            try {
+                release.await(30, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            count.incrementAndGet();
+            if (event.snapshot().playback().track().title().equals("Song 999")) {
+                newest.countDown();
+            }
+        });
+        orpheus.start();
+        await(entered);
+        for (int i = 0; i < 1000; i++) {
+            source.report(session("s1").track(Track.of("Song " + i, "Me")).build());
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!orpheus.playback().track().title().equals("Song 999") && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        get(orpheus.controls().pause());
+        release.countDown();
+        await(newest);
+        assertTrue(count.get() <= 258, "delivered " + count.get());
+    }
+
+    @Test
+    void aSlowLyricsProviderOnlySeesTheNewestWaitingTrack() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch last = new CountDownLatch(1);
+        List<String> asked = new CopyOnWriteArrayList<>();
+        FakeSource source = new FakeSource("fake", false);
+        orpheus = Orpheus.builder()
+                .source(source)
+                .lyrics(track -> {
+                    asked.add(track.title());
+                    entered.countDown();
+                    try {
+                        release.await(30, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    if (track.title().equals("Song 9")) {
+                        last.countDown();
+                    }
+                    return null;
+                })
+                .build();
+        orpheus.start();
+        for (int i = 0; i < 10; i++) {
+            source.report(session("s1").track(Track.of("Song " + i, "Me")).build());
+            if (i == 0) {
+                await(entered);
+            }
+        }
+        get(orpheus.controls().pause());
+        release.countDown();
+        await(last);
+        assertEquals(List.of("Song 0", "Song 9"), asked);
+    }
+
+    @Test
+    void aSourceThatNeverStopsDoesNotBlockALaterStart() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        lol.trq.orpheus.source.Source stuck = new lol.trq.orpheus.source.Source() {
+            @Override
+            public String id() {
+                return "stuck";
+            }
+
+            @Override
+            public void start(lol.trq.orpheus.source.SourceSink sink) {}
+
+            @Override
+            public void stop() {
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        PushSource push = PushSource.create("mine");
+        orpheus = Orpheus.builder().source(stuck).source(push).build();
+        CountDownLatch begun = when(orpheus, e -> e instanceof SourceStatusChanged);
+        orpheus.start();
+        await(begun);
+        orpheus.stop();
+        CountDownLatch shown =
+                when(orpheus, e -> e.snapshot().playback().track().title().equals("Later"));
+        orpheus.start();
+        push.publish(PlaybackUpdate.playing(Track.of("Later", "Me")));
+        await(shown);
+        assertEquals(
+                SourceStatus.State.UNAVAILABLE,
+                orpheus.sources().get(0).status().state());
+        orpheus.stop();
+        release.countDown();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (libraryThreads() > 0 && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        assertEquals(0, libraryThreads());
+    }
 }
