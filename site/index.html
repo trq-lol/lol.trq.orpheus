@@ -5,11 +5,11 @@ title: Orpheus
 {% assign intro = readme | split: "## Requirements" | first | split: "
 
 " %}
-{% assign requirements = readme | split: "## Requirements" | last | split: "## Install" | first | replace: "](docs/", "](/docs/" | replace: ".md)", ".html)" %}
+{% assign requirements = readme | split: "## Requirements" | last | split: "## Install" | first | replace: "](docs/", "](/docs/" | replace: ".md)", ".html)" | replace: ".md#", ".html#" %}
 {% assign usage = readme | split: "## Usage" | last | split: "```java" | slice: 1, 1 | first | split: "```" | first %}
 {% assign paras = "" | split: "" %}{% for p in intro %}{% assign c = p | strip | slice: 0, 1 %}{% if c != "#" and c != "[" and c != "" %}{% assign paras = paras | push: p %}{% endif %}{% endfor %}
 <p class="lede">{{ paras[0] | markdownify | strip_html | strip }}</p>
-{{ paras[1] | replace: ".md)", ".html)" | markdownify }}
+{{ paras[1] | replace: ".md)", ".html)" | replace: ".md#", ".html#" | markdownify }}
 
 <div class="actions">
   <a class="button" href="{{ '/api/' | relative_url }}">API reference</a>
