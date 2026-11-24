@@ -38,8 +38,8 @@ repositories {
 }
 
 dependencies {
-    implementation 'lol.trq:orpheus-core:0.1.0'
-    implementation 'lol.trq:orpheus-system:0.1.0'
+    implementation 'lol.trq:orpheus-core:0.1.1'
+    implementation 'lol.trq:orpheus-system:0.1.1'
 }
 ```
 
