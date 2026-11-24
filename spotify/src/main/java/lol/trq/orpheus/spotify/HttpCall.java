@@ -16,6 +16,9 @@ public interface HttpCall {
      */
     Answer send(String method, String url, Map<String, String> headers, byte[] body, int maxBytes) throws IOException;
 
+    /** Ends every request in progress, because the source is stopping. */
+    default void abort() {}
+
     /**
      * @param status the HTTP status
      * @param retryAfterSeconds the {@code Retry-After} header, or -1

@@ -117,9 +117,7 @@ class SpotifySourceTest {
 
     @Test
     void adsLocalFilesEpisodesAndOddAnswersDoNotBreakIt() {
-        SessionUpdate ad = parse("{\"is_playing\":true,\"item\":null,\"currently_playing_type\":\"ad\"}");
-        assertTrue(ad.track().isEmpty());
-        assertEquals(PlaybackState.PLAYING, ad.state());
+        assertNull(parse("{\"is_playing\":true,\"item\":null,\"currently_playing_type\":\"ad\"}"));
         assertNull(parse("{\"is_playing\":false,\"item\":null}"));
         assertNull(parse("{}"));
 
@@ -138,7 +136,8 @@ class SpotifySourceTest {
         assertEquals("https://i.scdn.co/e", episode.coverUri());
 
         SessionUpdate odd = parse("{\"is_playing\":true,\"progress_ms\":\"x\",\"device\":[],\"repeat_state\":7,"
-                + "\"shuffle_state\":null,\"item\":{\"name\":5,\"artists\":{},\"album\":[]},\"actions\":1}");
+                + "\"shuffle_state\":null,\"item\":{\"name\":\"n\",\"artists\":{},\"album\":[]},\"actions\":1}");
+        assertTrue(Double.isNaN(odd.volume()), "an unknown volume is NaN, so another source can fill it in");
         assertEquals(0, odd.positionMillis());
         assertEquals(Shuffle.UNKNOWN, odd.shuffle());
         assertEquals(Repeat.UNKNOWN, odd.repeat());
@@ -184,8 +183,73 @@ class SpotifySourceTest {
         server.player = answer(401, "{}");
         source.start(sink);
         assertEquals("not signed in", sink.status("UNAVAILABLE").reason());
+        Thread.sleep(1500);
         assertEquals(List.of("token-1"), rejected);
         assertEquals(1, server.requests.size());
+    }
+
+    @Test
+    void likingChecksThatTheTrackIsStillTheOneShown() throws Exception {
+        server.player = answer(200, PLAYING);
+        source.start(sink);
+        sink.session();
+        assertTrue(source.like("spotify", true).get(5, TimeUnit.SECONDS).done());
+        assertTrue(server.requests.stream()
+                .anyMatch(r -> r.method.equals("PUT") && r.url.endsWith("/me/library?uris=spotify%3Atrack%3AT1")));
+        server.requests.clear();
+        server.player = answer(200, PLAYING.replace("spotify:track:T1", "spotify:track:T2"));
+        assertEquals(
+                "the track changed",
+                source.like("spotify", true).get(5, TimeUnit.SECONDS).reason());
+        assertTrue(server.requests.stream().allMatch(r -> r.method.equals("GET")));
+    }
+
+    @Test
+    void aVolumeDragSendsTheNewestValueAndOldCommandsExpire() throws Exception {
+        server.player = answer(204, "");
+        source.start(sink);
+        sink.status("READY");
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        server.onRequest = r -> {
+            if (r.url.endsWith("/next")) {
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return answer(204, "");
+        };
+        source.send(ControlRequest.of("spotify", Control.NEXT));
+        List<CompletableFuture<ControlResult>> drag = new ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            drag.add(source.send(new ControlRequest("spotify", Control.VOLUME, 0, i / 10.0, false, Repeat.OFF)));
+        }
+        release.countDown();
+        assertTrue(drag.get(9).get(5, TimeUnit.SECONDS).done());
+        assertFalse(drag.get(0).get(5, TimeUnit.SECONDS).done());
+        assertEquals(
+                List.of("https://api.spotify.com/v1/me/player/volume?volume_percent=100"),
+                server.requests.stream()
+                        .map(Request::url)
+                        .filter(u -> u.contains("volume"))
+                        .toList());
+
+        java.util.concurrent.CountDownLatch slow = new java.util.concurrent.CountDownLatch(1);
+        server.onRequest = r -> {
+            if (r.url.endsWith("/next")) {
+                try {
+                    slow.await(4500, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return answer(204, "");
+        };
+        source.send(ControlRequest.of("spotify", Control.NEXT));
+        CompletableFuture<ControlResult> late = source.send(ControlRequest.of("spotify", Control.PAUSE));
+        assertFalse(late.get(8, TimeUnit.SECONDS).done());
+        assertTrue(server.requests.stream().noneMatch(r -> r.url.endsWith("/pause")), "a stale command was sent");
     }
 
     @Test
@@ -220,7 +284,7 @@ class SpotifySourceTest {
         ControlResult result =
                 source.send(ControlRequest.of("spotify", Control.PAUSE)).get(5, TimeUnit.SECONDS);
         assertFalse(result.done());
-        Thread.sleep(400);
+        Thread.sleep(2000);
         assertEquals(1, server.requests.size(), "nothing may be sent before the limit ends");
     }
 

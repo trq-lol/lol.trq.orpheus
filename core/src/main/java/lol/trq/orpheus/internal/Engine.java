@@ -263,17 +263,39 @@ public final class Engine {
         return false;
     }
 
-    /** The ability of the selected source, or else of the first source that has it. Null when none does. */
-    public <C> C capability(Class<C> type) {
-        C first = null;
-        for (Source source : sources) {
-            C capability = source.capability(type);
-            if (capability != null && source.id().equals(snapshot.playback().sourceId())) {
-                return capability;
+    /** An ability and the session to use it on. */
+    public record Ability<C>(C capability, String sessionId) {}
+
+    /**
+     * The ability of the selected source, or else of a source whose session is the same song. With nothing selected, of
+     * the first source that has it. Null when none does.
+     */
+    public <C> Ability<C> ability(Class<C> type) {
+        Playback playback = snapshot.playback();
+        Ability<C> found = null;
+        for (int i = 0; i < sources.size(); i++) {
+            C capability = sources.get(i).capability(type);
+            if (capability == null) {
+                continue;
             }
-            first = first == null ? capability : first;
+            if (sources.get(i).id().equals(playback.sourceId())) {
+                return new Ability<>(capability, playback.sessionId());
+            }
+            if (found != null) {
+                continue;
+            }
+            if (!playback.isPresent()) {
+                found = new Ability<>(capability, playback.sessionId());
+                continue;
+            }
+            for (SessionUpdate update : bySource.get(i)) {
+                if (update.track().sameSong(playback.track())) {
+                    found = new Ability<>(capability, update.sessionId());
+                    break;
+                }
+            }
         }
-        return first;
+        return found;
     }
 
     /** Recomputes everything from the latest reports. Cheap when nothing changed. */

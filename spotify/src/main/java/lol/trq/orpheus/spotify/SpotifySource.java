@@ -2,6 +2,7 @@
 package lol.trq.orpheus.spotify;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -62,6 +63,10 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
 
     private static final String API = "https://api.spotify.com/v1";
     private static final SourceApp APP = new SourceApp("spotify", "Spotify");
+    private static final String PLAYER = "/me/player?additional_types=track,episode";
+    private static final String POLL_THREAD = "orpheus-spotify";
+    private static final int MAX_OPEN_COMMANDS = 16;
+    private static final long COMMAND_NANOS = TimeUnit.SECONDS.toNanos(4);
     private static final Pattern URI_FORM =
             Pattern.compile("spotify:(track|episode|album|artist|playlist|show):[A-Za-z0-9]{1,64}");
     private static final Pattern DEVICE_FORM = Pattern.compile("[A-Za-z0-9_-]{1,128}");
@@ -77,7 +82,7 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
     private static final long NO_TOKEN_MILLIS = 60_000;
     private static final long FORBIDDEN_MILLIS = 300_000;
     private static final long QUOTA_MILLIS = 300_000;
-    private static final long MAX_WAIT_MILLIS = 24L * 3_600_000;
+    private static final long MAX_WAIT_SECONDS = 24L * 3600;
     private static final int FAILURES_BEFORE_UNAVAILABLE = 3;
 
     private final TokenSource tokens;
@@ -156,12 +161,17 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             case PAUSE -> command("PUT", player + "/pause", null);
             case NEXT -> command("POST", player + "/next", null);
             case PREVIOUS -> command("POST", player + "/previous", null);
-            case SEEK -> command("PUT", player + "/seek?position_ms=" + Math.max(0, request.positionMillis()), null);
+            case SEEK ->
+                command(
+                        Control.SEEK,
+                        "PUT",
+                        player + "/seek?position_ms=" + Math.max(0, request.positionMillis()),
+                        null);
             case SHUFFLE -> command("PUT", player + "/shuffle?state=" + request.on(), null);
             case REPEAT -> command("PUT", player + "/repeat?state=" + repeat(request.repeat()), null);
             case VOLUME -> {
                 long percent = Math.round(Math.max(0, Math.min(1, request.value())) * 100);
-                yield command("PUT", player + "/volume?volume_percent=" + percent, null);
+                yield command(Control.VOLUME, "PUT", player + "/volume?volume_percent=" + percent, null);
             }
             default -> CompletableFuture.completedFuture(ControlResult.unsupported("not offered by Spotify"));
         };
@@ -234,7 +244,21 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
         if (!valid(uri)) {
             return CompletableFuture.completedFuture(ControlResult.refused("nothing that can be saved is playing"));
         }
-        return command(liked ? "PUT" : "DELETE", API + "/me/library?uris=" + encode(uri), null);
+        String url = API + "/me/library?uris=" + encode(uri);
+        return current.onCommands(
+                null,
+                deadline -> {
+                    HttpCall.Answer now = current.call("GET", API + PLAYER, null, deadline);
+                    if (now.status() != 200) {
+                        return now.status() == 204 ? ControlResult.refused("nothing is playing") : outcome(now);
+                    }
+                    if (!uri.equals(text(map(map(json(now.body())).get("item")).get("uri")))) {
+                        current.schedule(0);
+                        return ControlResult.refused("the track changed");
+                    }
+                    return outcome(current.call(liked ? "PUT" : "DELETE", url, null, deadline));
+                },
+                reason -> ControlResult.failed(reason));
     }
 
     /** The first 50 playlists. Needs the scope {@code playlist-read-private}. */
@@ -285,14 +309,19 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
     }
 
     private CompletableFuture<ControlResult> command(String method, String url, String body) {
+        return command(null, method, url, body);
+    }
+
+    /** {@code replaces} names the control whose older waiting commands this one makes pointless, or is null. */
+    private CompletableFuture<ControlResult> command(Control replaces, String method, String url, String body) {
         Run current = run;
         if (current == null) {
             return CompletableFuture.completedFuture(ControlResult.failed("stopped"));
         }
         return current.onCommands(
-                () -> {
-                    HttpCall.Answer answer = current.call(method, url, body);
-                    ControlResult result = outcome(answer);
+                replaces,
+                deadline -> {
+                    ControlResult result = outcome(current.call(method, url, body, deadline));
                     if (result.done()) {
                         current.schedule(AFTER_COMMAND_MILLIS);
                     }
@@ -307,8 +336,9 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             return CompletableFuture.completedFuture(new Reply<>(ControlResult.failed("stopped"), empty));
         }
         return current.onCommands(
-                () -> {
-                    HttpCall.Answer answer = current.call("GET", API + path, null);
+                null,
+                deadline -> {
+                    HttpCall.Answer answer = current.call("GET", API + path, null, deadline);
                     ControlResult result = outcome(answer);
                     return result.done() ? Reply.of(read.apply(map(json(answer.body())))) : new Reply<>(result, empty);
                 },
@@ -351,15 +381,15 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
         }
     }
 
-    /** Reads the answer of the player endpoint, or null when nothing is active. */
+    /** Reads the answer of the player endpoint. Null when nothing is active, and for an ad, which has no data. */
     static SessionUpdate session(Map<?, ?> root, long measuredNanos, CoverData cover) {
         Map<?, ?> item = map(root.get("item"));
         Map<?, ?> device = map(root.get("device"));
-        if (item.isEmpty() && !Boolean.TRUE.equals(root.get("is_playing"))) {
+        if (track(item).isEmpty()) {
             return null;
         }
         boolean playing = Boolean.TRUE.equals(root.get("is_playing"));
-        double volume = number(device.get("volume_percent"), -1);
+        double volume = number(device.get("volume_percent"), Double.NaN);
         return new SessionUpdate(
                 ID,
                 APP,
@@ -375,7 +405,7 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
                     case "context" -> Repeat.ALL;
                     default -> Repeat.UNKNOWN;
                 },
-                volume < 0 ? -1 : volume / 100,
+                volume / 100,
                 controls(map(map(root.get("actions")).get("disallows")), device, playing),
                 cover,
                 imageUrl(item));
@@ -506,7 +536,11 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
     }
 
     private static String encode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static Object json(byte[] body) throws IOException {
@@ -534,7 +568,7 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
     }
 
     private interface Work<T> {
-        T run() throws IOException, InterruptedException;
+        T run(long deadline) throws IOException, InterruptedException;
     }
 
     private static final class NoToken extends IOException {
@@ -556,8 +590,11 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
     /** One start-to-stop cycle. Polling and commands have a thread each, so a slow poll does not delay a command. */
     private final class Run {
         final SourceSink sink;
-        final ScheduledThreadPoolExecutor polling = executor("orpheus-spotify");
+        final ScheduledThreadPoolExecutor polling = executor(POLL_THREAD);
         final ScheduledThreadPoolExecutor commands = executor("orpheus-spotify-commands");
+        final ScheduledThreadPoolExecutor covers = executor("orpheus-spotify-covers");
+        private final Object tokenLock = new Object();
+        private final Map<Control, Integer> newest = new ConcurrentHashMap<>();
         final Set<CompletableFuture<?>> open = ConcurrentHashMap.newKeySet();
         volatile boolean ended;
         volatile String trackUri;
@@ -570,6 +607,13 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
         private CoverData cover;
         private String coverUrl;
         private String failedCoverUrl;
+        private String wantedCoverUrl;
+        private Map<?, ?> shown;
+        private long shownAt;
+        private long sentAt;
+        private long answeredAt;
+        private CompletableFuture<String> asked;
+        private String lastRejected;
 
         Run(SourceSink sink) {
             this.sink = sink;
@@ -590,12 +634,15 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             ended = true;
             polling.shutdownNow();
             commands.shutdownNow();
+            covers.shutdownNow();
+            http.abort();
             for (CompletableFuture<?> future : open) {
                 future.cancel(false);
             }
             try {
                 polling.awaitTermination(4, TimeUnit.SECONDS);
                 commands.awaitTermination(4, TimeUnit.SECONDS);
+                covers.awaitTermination(4, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -630,15 +677,28 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             schedule(Math.max(150, HINT_GAP_MILLIS - since));
         }
 
-        <T> CompletableFuture<T> onCommands(Work<T> work, Function<String, T> failed) {
+        <T> CompletableFuture<T> onCommands(Control replaces, Work<T> work, Function<String, T> failed) {
             CompletableFuture<T> future = new CompletableFuture<>();
+            if (open.size() >= MAX_OPEN_COMMANDS) {
+                future.complete(failed.apply("too many commands are waiting"));
+                return future;
+            }
+            long deadline = System.nanoTime() + COMMAND_NANOS;
+            int number = replaces == null ? 0 : newest.merge(replaces, 1, Integer::sum);
             open.add(future);
             future.whenComplete((value, error) -> open.remove(future));
             try {
                 commands.execute(() -> {
+                    if (future.isDone()) {
+                        return;
+                    }
                     try {
-                        future.complete(future.isDone() ? null : work.run());
-                    } catch (IOException | InterruptedException | RuntimeException e) {
+                        if (replaces != null && newest.get(replaces) != number) {
+                            future.complete(failed.apply("replaced by a newer command"));
+                            return;
+                        }
+                        future.complete(work.run(deadline));
+                    } catch (IOException | InterruptedException | RuntimeException | LinkageError e) {
                         future.complete(failed.apply(String.valueOf(e.getMessage())));
                     }
                 });
@@ -648,54 +708,90 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             return future;
         }
 
-        /** Calls the API with a token. A rejected token is replaced once. */
-        HttpCall.Answer call(String method, String url, String body) throws IOException, InterruptedException {
+        /** Calls the API with a token. A rejected token is replaced once. Nothing is sent after the deadline. */
+        HttpCall.Answer call(String method, String url, String body, long deadline)
+                throws IOException, InterruptedException {
             if (System.nanoTime() - limitedUntil < 0) {
                 throw new Limited();
             }
             String token = token();
-            HttpCall.Answer answer = authorized(method, url, body, token);
+            HttpCall.Answer answer = authorized(method, url, body, token, deadline);
             if (answer.status() == 401) {
-                tokens.rejected(token);
+                reject(token);
                 String fresh = token();
                 if (fresh.equals(token)) {
                     throw new NoToken();
                 }
-                answer = authorized(method, url, body, fresh);
+                answer = authorized(method, url, body, fresh, deadline);
                 if (answer.status() == 401) {
-                    tokens.rejected(fresh);
+                    reject(fresh);
                     throw new NoToken();
                 }
             }
             if (answer.status() == 429) {
                 long wait = answer.retryAfterSeconds() >= 0
-                        ? Math.max(1_000, answer.retryAfterSeconds() * 1000)
+                        ? 1000 * Math.max(1, Math.min(MAX_WAIT_SECONDS, answer.retryAfterSeconds()))
                         : reason(answer).equals("QUOTA_EXCEEDED") ? QUOTA_MILLIS : 30_000;
-                limitedUntil = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.min(MAX_WAIT_MILLIS, wait));
+                limit(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(wait));
             }
             return answer;
         }
 
-        private HttpCall.Answer authorized(String method, String url, String body, String token) throws IOException {
+        private synchronized void limit(long until) {
+            if (until - limitedUntil > 0) {
+                limitedUntil = until;
+            }
+        }
+
+        private void reject(String token) {
+            synchronized (tokenLock) {
+                if (token.equals(lastRejected)) {
+                    return;
+                }
+                lastRejected = token;
+            }
+            tokens.rejected(token);
+        }
+
+        private HttpCall.Answer authorized(String method, String url, String body, String token, long deadline)
+                throws IOException {
+            if (System.nanoTime() - limitedUntil < 0) {
+                throw new Limited();
+            }
+            if (System.nanoTime() - deadline > 0) {
+                throw new IOException("the command waited too long");
+            }
             Map<String, String> headers = new LinkedHashMap<>();
             headers.put("Authorization", "Bearer " + token);
             headers.put("Accept", "application/json");
             if (body != null) {
                 headers.put("Content-Type", "application/json");
             }
-            return http.send(
+            long sent = System.nanoTime();
+            HttpCall.Answer answer = http.send(
                     method, url, headers, body == null ? null : body.getBytes(StandardCharsets.UTF_8), MAX_JSON);
+            if (Thread.currentThread().getName().equals(POLL_THREAD)) {
+                sentAt = sent;
+                answeredAt = System.nanoTime();
+            }
+            return answer;
         }
 
         private String token() throws IOException, InterruptedException {
             try {
-                CompletableFuture<String> future = tokens.accessToken();
+                CompletableFuture<String> future;
+                synchronized (tokenLock) {
+                    if (asked == null || asked.isDone()) {
+                        asked = tokens.accessToken();
+                    }
+                    future = asked;
+                }
                 String token = future == null ? null : future.get(10, TimeUnit.SECONDS);
-                if (token == null || token.isBlank() || token.chars().anyMatch(c -> c < 0x21 || c > 0x7e)) {
+                if (token == null || token.isEmpty() || token.chars().anyMatch(c -> c < 0x21 || c > 0x7e)) {
                     throw new NoToken();
                 }
                 return token;
-            } catch (ExecutionException | TimeoutException | RuntimeException e) {
+            } catch (ExecutionException | TimeoutException | RuntimeException | LinkageError e) {
                 throw new IOException("no token could be obtained");
             }
         }
@@ -717,7 +813,7 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
                 delay = limited();
             } catch (InterruptedException e) {
                 return;
-            } catch (IOException | RuntimeException e) {
+            } catch (IOException | RuntimeException | LinkageError e) {
                 delay = failed(String.valueOf(e.getMessage()));
             }
             schedule(delay);
@@ -725,8 +821,8 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
 
         private long read() throws IOException, InterruptedException {
             long before = System.nanoTime();
-            HttpCall.Answer answer = call("GET", API + "/me/player?additional_types=track,episode", null);
-            long measured = before + (System.nanoTime() - before) / 2;
+            HttpCall.Answer answer = call("GET", API + PLAYER, null, before + TimeUnit.SECONDS.toNanos(60));
+            long measured = answeredAt - (answeredAt - sentAt) / 2;
             if (answer.status() == 429) {
                 return limited();
             }
@@ -746,6 +842,8 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
                 report(SourceStatus.READY);
                 return NOTHING_MILLIS;
             }
+            shown = root;
+            shownAt = measured;
             String image = session.coverUri();
             if (image == null || !image.equals(coverUrl)) {
                 cover = null;
@@ -754,8 +852,9 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             }
             publish(session);
             report(SourceStatus.READY);
-            if (image != null && cover == null && !image.equals(failedCoverUrl) && fetchCover(image)) {
-                publish(session(root, measured, cover));
+            if (image != null && cover == null && !image.equals(failedCoverUrl) && !image.equals(wantedCoverUrl)) {
+                wantedCoverUrl = image;
+                fetchCover(image);
             }
             if (session.state() != PlaybackState.PLAYING) {
                 return PAUSED_MILLIS;
@@ -764,22 +863,49 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             return left > 0 ? Math.min(PLAYING_MILLIS, left + AFTER_END_MILLIS) : PLAYING_MILLIS;
         }
 
-        private boolean fetchCover(String url) {
+        /** A slow image must not hold up the polls, so it has its own thread; the result is used on the polling one. */
+        private void fetchCover(String url) {
             try {
-                HttpCall.Answer answer = http.send("GET", url, Map.of(), null, MAX_COVER);
-                if (answer.status() == 200 && answer.body().length > 0) {
-                    cover = new CoverData(url, answer.body());
-                    coverUrl = url;
-                    return true;
-                }
-                // a missing image stays missing; anything else is tried again with the next poll
-                if (answer.status() >= 400 && answer.status() < 500 && answer.status() != 429) {
-                    failedCoverUrl = url;
-                }
-            } catch (IOException | RuntimeException e) {
-                failedCoverUrl = null;
+                covers.execute(() -> {
+                    CoverData found = null;
+                    boolean missing = false;
+                    try {
+                        HttpCall.Answer answer = http.send("GET", url, Map.of(), null, MAX_COVER);
+                        int status = answer.status();
+                        if (status == 200 && answer.body().length > 0) {
+                            found = new CoverData(url, answer.body());
+                        }
+                        // a missing image stays missing; anything else is tried again with a later poll
+                        missing = status >= 400 && status < 500 && status != 429;
+                    } catch (IOException | RuntimeException | LinkageError e) {
+                        missing = false;
+                    }
+                    CoverData data = found;
+                    boolean gone = missing;
+                    try {
+                        polling.execute(() -> coverArrived(url, data, gone));
+                    } catch (RejectedExecutionException ignored) {
+                        // stopping
+                    }
+                });
+            } catch (RejectedExecutionException ignored) {
+                // stopping
             }
-            return false;
+        }
+
+        private void coverArrived(String url, CoverData data, boolean missing) {
+            if (url.equals(wantedCoverUrl)) {
+                wantedCoverUrl = null;
+            }
+            if (missing) {
+                failedCoverUrl = url;
+            }
+            SessionUpdate session = data == null || shown == null ? null : session(shown, shownAt, data);
+            if (session != null && url.equals(session.coverUri())) {
+                cover = data;
+                coverUrl = url;
+                publish(session);
+            }
         }
 
         private void publish(SessionUpdate session) {
@@ -788,6 +914,9 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             }
             String uri = session == null ? null : session.track().uri();
             trackUri = uri;
+            if (session == null) {
+                shown = null;
+            }
             link = session == null || session.track().id() == null || !valid(uri)
                     ? null
                     : "https://open.spotify.com/"

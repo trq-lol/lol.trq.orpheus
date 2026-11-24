@@ -407,7 +407,12 @@ public final class Orpheus implements AutoCloseable {
             SourceSink sink = new SourceSink() {
                 @Override
                 public void status(SourceStatus status) {
-                    submit(hub, () -> engine.status(index, status));
+                    submit(hub, () -> {
+                        engine.status(index, status);
+                        if (status.state() != SourceStatus.State.READY) {
+                            tellOthers(index, List.of());
+                        }
+                    });
                 }
 
                 @Override
@@ -614,13 +619,12 @@ public final class Orpheus implements AutoCloseable {
                 CompletableFuture<R> result,
                 Function<String, R> failed,
                 Function<String, R> unsupported) {
-            C capability = engine.capability(type);
-            if (capability == null) {
+            Engine.Ability<C> ability = engine.ability(type);
+            if (ability == null) {
                 result.complete(unsupported.apply("not supported by the selected source"));
                 return;
             }
-            String session = engine.snapshot().playback().sessionId();
-            guard(() -> call.apply(capability, session), result, failed);
+            guard(() -> call.apply(ability.capability(), ability.sessionId()), result, failed);
         }
 
         <R> void guard(Supplier<CompletableFuture<R>> call, CompletableFuture<R> result, Function<String, R> failed) {

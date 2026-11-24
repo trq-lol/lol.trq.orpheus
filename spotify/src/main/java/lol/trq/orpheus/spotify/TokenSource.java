@@ -11,7 +11,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @FunctionalInterface
 public interface TokenSource {
-    /** A valid access token, or null when there is none. Called on a library thread, at most once per request. */
+    /** A valid access token, or null when there is none. Called on a library thread, one call at a time. */
     CompletableFuture<String> accessToken();
 
     /** The service no longer accepts {@code token}: the next {@link #accessToken()} should return a new one. */
