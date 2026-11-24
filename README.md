@@ -5,28 +5,25 @@
 [![Systems](https://img.shields.io/badge/systems-Windows%20%7C%20Linux%20%7C%20macOS-informational)](docs/platforms.md)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-A music library for Java: what is playing, playback controls and synced lyrics, from any source.
+A Java library that shows what is playing, controls it and displays synced lyrics.
 
-It reads the media sessions of the operating system (Windows, Linux, macOS), so it works with any player and needs
-no account, and it accepts data pushed in from your own player. Everything a source can do is a capability you ask
-for at run time: playback state, controls, queue, devices, library, lyrics, cover colours. Nothing is tied to one
-music service, nothing touches the network, and unsupported operations answer "unsupported" instead of throwing.
+It reads the media sessions of Windows, Linux and macOS, so it needs no account and works with any player that
+publishes one. You can also feed it from your own player. It never uses the network.
 
 ## Requirements
 
 | | |
 |---|---|
-| Java | 17 or newer. No dependencies. |
-| Windows | 10 version 1809 or newer, or 11, x64. Uses a small native library bundled in the jar. |
-| Linux | A session bus with MPRIS players. Pure Java. |
-| macOS | Experimental. Uses a bundled helper process; see [docs/platforms.md](docs/platforms.md). |
+| Java | 17 or newer, no dependencies |
+| Windows | 10 (1809 or newer) or 11, x64 |
+| Linux | A session bus with MPRIS players |
+| macOS | Experimental, see [platforms](docs/platforms.md#macos) |
 
-On Java 24 and newer the JVM warns about native access on Windows unless it is started with
-`--enable-native-access=ALL-UNNAMED`.
+On Java 24 and newer, start with `--enable-native-access=ALL-UNNAMED` to avoid a warning on Windows.
 
 ## Install
 
-No release has been published yet. The artifacts will be on GitHub Packages:
+There is no release yet. Artifacts will be on GitHub Packages, which needs a GitHub token with `read:packages`:
 
 ```groovy
 repositories {
@@ -41,17 +38,17 @@ repositories {
 
 dependencies {
     implementation 'lol.trq:orpheus-core:0.1.0'
-    implementation 'lol.trq:orpheus-system:0.1.0' // Windows, Linux and macOS sessions
+    implementation 'lol.trq:orpheus-system:0.1.0'
 }
 ```
 
-| Artifact | What it holds |
+| Artifact | Contents |
 |---|---|
-| `orpheus-core` | Model, hub, push source, covers, lyrics. Pure Java. |
-| `orpheus-system` | `SystemSessions.create()`: the right source for the system it runs on. Pulls in the three below. |
-| `orpheus-windows` | Windows media sessions. |
-| `orpheus-linux` | MPRIS players over a built-in D-Bus client. |
-| `orpheus-macos` | macOS Now Playing (experimental). |
+| `orpheus-core` | Everything except the system sources. Pure Java. |
+| `orpheus-system` | Picks the source for the running system. Pulls in the three below. |
+| `orpheus-windows` | Windows media sessions |
+| `orpheus-linux` | MPRIS |
+| `orpheus-macos` | macOS Now Playing |
 
 ## Usage
 
@@ -61,18 +58,14 @@ dependencies {
 Orpheus orpheus = Orpheus.builder().source(SystemSessions.create()).build();
 orpheus.start();
 
-// any thread, every frame, no allocation
-Playback now = orpheus.playback();
+Playback now = orpheus.playback(); // any thread, no allocation
 if (now.isPresent()) {
     draw(now.track().title(), now.track().artistLine());
     drawBar(now.timeline().progressAt(System.nanoTime()));
 }
 ```
 
-The position is stored as "where it was, when, and how fast it moves", so progress is computed locally and stays
-smooth between updates.
-
-### React to changes
+### Events
 
 ```java
 Subscription subscription = orpheus.listen(event -> {
@@ -85,27 +78,21 @@ Subscription subscription = orpheus.listen(event -> {
 });
 ```
 
-Listeners run on a library thread, in order, or on the executor given to `Orpheus.builder().executor(...)`.
+Listeners run in order on a library thread, or on the executor passed to `Orpheus.builder().executor(...)`.
 
-### Control playback
+### Controls
 
 ```java
-Playback now = orpheus.playback();
-if (now.can(Control.SEEK)) {
-    orpheus.controls().seek(Duration.ofSeconds(30)).thenAccept(result -> {
-        if (!result.done()) {
-            log(result.status() + " " + result.reason());
-        }
-    });
+if (orpheus.playback().can(Control.SEEK)) {
+    orpheus.controls().seek(Duration.ofSeconds(30)).thenAccept(result -> log(result.status()));
 }
-orpheus.controls().togglePlayPause(); // never throws
+orpheus.controls().togglePlayPause();
 ```
 
-Every command returns a future that always completes with `DONE`, `UNSUPPORTED`, `REFUSED` or `FAILED`.
-`orpheus.controls(playback)` binds commands to the session of a snapshot, so a click cannot land on a different
-player after the selection moved.
+Commands never throw. They complete with `DONE`, `UNSUPPORTED`, `REFUSED` or `FAILED`. Use
+`orpheus.controls(playback)` to keep a command on the session it was shown for.
 
-### Synced lyrics from your own files
+### Lyrics
 
 ```java
 Orpheus orpheus = Orpheus.builder()
@@ -113,101 +100,71 @@ Orpheus orpheus = Orpheus.builder()
         .lyrics(LocalLyrics.in(Path.of("lyrics")))
         .build();
 
-Snapshot snapshot = orpheus.snapshot(); // playback, lyrics and cover that belong together
+Snapshot snapshot = orpheus.snapshot();
 int line = snapshot.lyrics().lineAt(snapshot.playback().timeline().positionMillisAt(System.nanoTime()));
 if (line >= 0) {
     draw(snapshot.lyrics().line(line).text());
 }
 ```
 
-`LocalLyrics` reads `.lrc` files (line and word timing, translations, offsets) and lyrics embedded in MP3, FLAC and
-MP4 files. Lyrics are shown only for a confident match; a wrong match is worse than none. The library ships no
-online lyrics provider: lyrics are copyrighted, and `LyricsProvider` is the place to plug in a source you have the
-right to use.
+`LocalLyrics` reads `.lrc` files and lyrics embedded in MP3, FLAC and MP4. Only confident matches are shown. There is
+no online provider; implement `LyricsProvider` to add one.
 
-### Push your own player in, and choose what is visible
+### Several sources
 
 ```java
 PushSource mine = PushSource.create("my-player");
 Orpheus orpheus = Orpheus.builder()
-        .source(mine)
         .source(SystemSessions.create())
+        .source(mine)
         .apps(AppRules.defaults().allow("firefox").deny("vlc"))
         .build();
 
 mine.handler(Control.PAUSE, request -> player.pause());
 mine.publish(PlaybackUpdate.playing(track).position(Duration.ofSeconds(12)));
-orpheus.pin(mine.id());   // show only this source; orpheus.unpin() returns to choosing automatically
+
+orpheus.pin(mine.id()); // only this source
+orpheus.unpin();        // automatic again
 ```
 
-Automatic choice: something playing beats something paused, and between equals the source added first wins. With
-the system first, a second source (a service, your own player) is shown only while the system has nothing
-playing, and the system takes over again the moment it plays. A short pause does not flip the display.
-`orpheus.pin(id)` is the manual choice (only the system, only one service); `orpheus.sources()` lists the ids
-with their status for a picker.
-Two sources that describe the same song are merged, and two different songs are never mixed.
+Automatic mode prefers playing over paused, then the source added first. `orpheus.sources()` lists the sources for a
+picker. Sources reporting the same song are merged.
 
 ## Privacy
 
-Operating system sessions include browser tabs (private windows too), video players and calls, and the media kind
-they report cannot be trusted: browsers label everything as music.
-
-- By default only well-known dedicated music players are visible. Browsers and unknown applications stay hidden
-  until you allow them with `AppRules`. `orpheus.sessions()` lists hidden applications by id, without track data, so
-  a program can offer "allow this app".
-- `Playback.shareable()` is false until you opt a source in. The library itself never sends anything anywhere.
-- No network access, no telemetry, no files written except the extracted native code, and no track data in logs
-  unless you install a debug sink.
-- What cannot be told apart: a music video from a song in a browser, and a private window from a normal one.
-- On Linux a player names its cover as a file path. The library reads that file only if it is a regular file that
-  starts like an image, up to 16 MiB, and hands the picture to your program as the cover. A program on the session
-  bus that poses as a player can therefore make an image file of the user show up as a cover.
+- Only known music players are visible by default. Browsers and unknown apps stay hidden until allowed in `AppRules`.
+- Browsers report every video as music, and private windows publish sessions too. The library cannot tell them apart.
+- `Playback.shareable()` is false until you opt a source in.
+- It makes no network requests, sends no telemetry and logs no track data unless you add a debug sink. The only files
+  it writes are its extracted native files.
+- On Linux, players name their cover by file path, so a program posing as a player can have the library show any
+  image file the user can read (up to 16 MiB).
 
 ## Limitations
 
-- Windows gives no per-application volume through its media session interface, so volume and mute are unsupported
-  there.
-- MPRIS has no media kind and no fast-forward or rewind commands.
-- macOS support rests on a private part of the system and can stop working with any macOS update. It only sees the
-  one application the system has elected, and it is marked experimental.
-- Queue, devices and library are designed and work for push sources. No operating system source exposes them. A
-  source for a music service API is designed but not part of this version.
-- A track that repeats with the same title and artist is seen as a seek to the start, not as a new track.
+- macOS relies on a private system API that any update can break, and its timing can be off.
+  [Details](docs/platforms.md#macos).
+- Windows has no volume control through media sessions.
+- Queue, device and library access work for push sources only.
+- A repeated track with the same title and artist counts as a seek, not a new track.
 
-## Verification
-
-- Unit tests cover selection, merging, position arithmetic, lyric timing and parsing, hostile input for every
-  parser, the D-Bus codec and the child-process handling. The important ones are checked by breaking the code on
-  purpose.
-- A live harness publishes generated tracks through each system's real media session interface and checks what the
-  library sees, every control round trip, filtering, a crashing player, source switching, lyrics timing and
-  start/stop leaks. See [docs/harness.md](docs/harness.md) and the numbers in [BENCHMARKS.md](BENCHMARKS.md).
-  All 14 scenarios pass on Windows and Linux. On macOS 9 or 10 of 14 pass: position and
-  lyrics can be about half a second off right after a track starts, and shuffle state and withdrawn controls are
-  not seen, and a play or pause change that follows another within milliseconds can be missed.
-- The long resource runs did not pass their check on Windows and Linux: memory grew more than allowed after the
-  start. Fast runs showed no growth per track change. Idle CPU was over the target on Linux and macOS. See
-  "Long runs" in [BENCHMARKS.md](BENCHMARKS.md).
-- The jars are also run after being repackaged, obfuscated and downgraded to Java 8 bytecode, on Java 8, 17 and 25.
-
-## Building and testing
+## Building
 
 ```sh
-./gradlew spotlessCheck build        # all modules; cargo builds the Windows library when run on Windows
-./gradlew :core:jmh                  # benchmarks
-./gradlew :harness:installDist       # then: harness/build/install/harness/bin/harness live
+./gradlew spotlessCheck build   # cargo builds the native library on Windows
+./gradlew :core:jmh
 ```
+
+See the [live harness](docs/harness.md) for testing against real sessions and [benchmarks](BENCHMARKS.md) for results.
 
 ## For AI agents
 
-Start with [CLAUDE.md](CLAUDE.md) for the mental model and the traps, then [llms.txt](llms.txt) for an index of
-every doc and core source file. The tests under `core/src/test` are the executable examples of the API, and the
-harness under `harness/` shows real use against a live session.
+Read [CLAUDE.md](CLAUDE.md) first. [llms.txt](llms.txt) indexes the docs and source.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Third-party parts are listed in [NOTICE.md](NOTICE.md). This project is not affiliated
-with any operating system vendor, player or music service; see [DISCLAIMER.md](DISCLAIMER.md).
+MIT, see [LICENSE](LICENSE). Third-party licenses are in [NOTICE.md](NOTICE.md). Not affiliated with any system vendor,
+player or music service, see [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Activity
 

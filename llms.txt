@@ -7,7 +7,7 @@
 ## Docs
 
 - [README](README.md): requirements, artifacts, usage, privacy, limitations
-- [Platforms](docs/platforms.md): what each system provides, native loading, transforming the jars, compatibility
+- [Platforms](docs/platforms.md): what each system provides, app ids, limits, transforming the jars
 - [Harness](docs/harness.md): the live checks and how to run them
 - [Benchmarks](BENCHMARKS.md): JMH numbers and measured targets
 - [CLAUDE.md](CLAUDE.md): mental model, patterns that matter, traps

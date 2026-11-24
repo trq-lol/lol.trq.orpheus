@@ -1,9 +1,9 @@
 title: Orpheus
-description: "A music library for Java: what is playing, playback controls and synced lyrics, from any source."
+description: "A Java library that shows what is playing, controls it and displays synced lyrics."
 url: https://orpheus.trq.lol
 baseurl: ""
 wordmark: orpheus
-tagline: "A music library for Java: what is playing, controls and synced lyrics, from any source."
+tagline: "A Java library that shows what is playing, controls it and displays synced lyrics."
 license: MIT
 repo: https://github.com/trq-lol/lol.trq.orpheus
 nav:
