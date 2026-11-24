@@ -266,6 +266,13 @@ body {
   padding: 0;
 }
 
+.prose figure.highlight {
+  margin: 0;
+}
+.prose thead:not(:has(th:not(:empty))) {
+  display: none;
+}
+
 /* Tables */
 
 .prose table {
