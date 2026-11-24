@@ -60,6 +60,9 @@ import lol.trq.orpheus.source.Transport;
 @Experimental
 public final class SpotifySource implements Source, Transport, QueueAccess, Devices, LibraryAccess {
     public static final String ID = "spotify";
+    private static final String MISSING_SCOPE = "the token lacks a scope";
+    private static final HttpCall.Answer MISSING = new HttpCall.Answer(
+            401, -1, "{\"error\":{\"message\":\"Permissions missing\"}}".getBytes(StandardCharsets.UTF_8));
 
     private static final String API = "https://api.spotify.com/v1";
     private static final SourceApp APP = new SourceApp("spotify", "Spotify");
@@ -355,6 +358,9 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             return ControlResult.DONE;
         }
         String reason = reason(answer);
+        if (missingScope(answer)) {
+            return ControlResult.refused(MISSING_SCOPE);
+        }
         if (status == 403) {
             return reason.equals("PREMIUM_REQUIRED")
                     ? ControlResult.refused("needs Spotify Premium")
@@ -367,6 +373,19 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             return ControlResult.refused("rate limited");
         }
         return ControlResult.failed("HTTP " + status);
+    }
+
+    /** Spotify answers a valid token without the needed scope with 401, like an expired one. */
+    static boolean missingScope(HttpCall.Answer answer) {
+        if (answer.status() != 401) {
+            return false;
+        }
+        try {
+            return text(map(map(json(answer.body())).get("error")).get("message"))
+                    .equals("Permissions missing");
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /** The machine-readable reason of an error answer, or an empty string. */
@@ -724,6 +743,9 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             }
             String token = token();
             HttpCall.Answer answer = authorized(method, url, body, token, deadline);
+            if (lacksScope(method, answer, token, deadline)) {
+                return MISSING;
+            }
             if (answer.status() == 401) {
                 reject(token);
                 String fresh = token();
@@ -731,6 +753,9 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
                     throw new NoToken();
                 }
                 answer = authorized(method, url, body, fresh, deadline);
+                if (lacksScope(method, answer, fresh, deadline)) {
+                    return MISSING;
+                }
                 if (answer.status() == 401) {
                     reject(fresh);
                     throw new NoToken();
@@ -759,6 +784,16 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
                 lastRejected = token;
             }
             tokens.rejected(token);
+        }
+
+        /** HttpURLConnection drops the body of a 401 to a command, so a read tells whether the token itself is good. */
+        private boolean lacksScope(String method, HttpCall.Answer answer, String token, long deadline)
+                throws IOException {
+            if (answer.status() != 401 || method.equals("GET") || answer.body().length > 0) {
+                return missingScope(answer);
+            }
+            HttpCall.Answer read = authorized("GET", API + "/me/player", null, token, deadline);
+            return read.status() == 200 || read.status() == 204 || missingScope(read);
         }
 
         private HttpCall.Answer authorized(String method, String url, String body, String token, long deadline)
@@ -833,6 +868,9 @@ public final class SpotifySource implements Source, Transport, QueueAccess, Devi
             long measured = answeredAt - (answeredAt - sentAt) / 2;
             if (answer.status() == 429) {
                 return limited();
+            }
+            if (missingScope(answer)) {
+                return unavailable(MISSING_SCOPE, FORBIDDEN_MILLIS);
             }
             if (answer.status() == 403) {
                 String reason = reason(answer);

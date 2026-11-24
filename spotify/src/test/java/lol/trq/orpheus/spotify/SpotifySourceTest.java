@@ -189,6 +189,41 @@ class SpotifySourceTest {
     }
 
     @Test
+    void aMissingScopeDoesNotRejectTheToken() throws Exception {
+        HttpCall.Answer missing = answer(401, "{\"error\":{\"status\":401,\"message\":\"Permissions missing\"}}");
+        server.onRequest = request -> request.method.equals("PUT") ? missing : answer(200, PLAYING);
+        source.start(sink);
+        sink.session();
+        ControlResult result =
+                source.send(ControlRequest.of("spotify", Control.PAUSE)).get(5, TimeUnit.SECONDS);
+        assertEquals("the token lacks a scope", result.reason());
+        assertEquals(List.of(), rejected);
+    }
+
+    @Test
+    void aBodylessRefusalOfACommandIsCheckedWithARead() throws Exception {
+        server.onRequest = request -> request.method.equals("PUT") ? answer(401, "") : answer(200, PLAYING);
+        source.start(sink);
+        sink.session();
+        ControlResult result =
+                source.send(ControlRequest.of("spotify", Control.PAUSE)).get(5, TimeUnit.SECONDS);
+        assertEquals("the token lacks a scope", result.reason());
+        assertEquals(List.of(), rejected);
+        server.onRequest = request -> answer(401, "");
+        result = source.send(ControlRequest.of("spotify", Control.PAUSE)).get(5, TimeUnit.SECONDS);
+        assertFalse(result.done());
+        assertEquals(List.of("token-1"), rejected);
+    }
+
+    @Test
+    void readingWithoutTheScopeIsReported() throws Exception {
+        server.player = answer(401, "{\"error\":{\"status\":401,\"message\":\"Permissions missing\"}}");
+        source.start(sink);
+        assertEquals("the token lacks a scope", sink.status("UNAVAILABLE").reason());
+        assertEquals(List.of(), rejected);
+    }
+
+    @Test
     void likingChecksThatTheTrackIsStillTheOneShown() throws Exception {
         server.player = answer(200, PLAYING);
         source.start(sink);

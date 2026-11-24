@@ -5,6 +5,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+### Fixed
+
+- `orpheus-spotify`: a missing scope no longer rejects a valid token.
+
 ## [0.1.0] - 2026-11-24
 
 ### Added
