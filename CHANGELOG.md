@@ -7,6 +7,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Windows: the session list is checked every 30 seconds, for when Windows stops reporting changes.
 - macOS: the controls a player has enabled, and its shuffle and repeat state.
 - `orpheus-spotify`: an experimental source for the Spotify Web API.
 - `Source.changedElsewhere`, so a polling source can react to the system session.

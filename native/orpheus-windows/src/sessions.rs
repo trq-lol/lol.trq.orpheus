@@ -23,6 +23,8 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(3);
 /// Java gives up on a command after this long; running it later would surprise the user.
 const COMMAND_LIFETIME: Duration = Duration::from_secs(5);
 const RELIST_INTERVAL: Duration = Duration::from_secs(1);
+/// Windows sometimes stops reporting new and closed sessions, so the list is compared this often.
+const LIST_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_THUMBNAIL_BYTES: u64 = 16 << 20;
 const MAX_TEXT_BYTES: usize = 4096;
 /// Windows FILETIME ticks (100 ns since 1601) at the Unix epoch.
@@ -339,6 +341,18 @@ fn execute(shared: &Shared, tracked: &Tracked, command: &Command) -> Vec<u8> {
     }
 }
 
+/// Whether the applications that have a session differ from the tracked ones.
+fn list_changed(manager: &Manager, sessions: &[Tracked]) -> Result<bool> {
+    let mut listed = Vec::new();
+    for session in &manager.GetSessions()? {
+        listed.push(cap(session.SourceAppUserModelId().map(|s| s.to_string()).unwrap_or_default()));
+    }
+    let mut known: Vec<String> = sessions.iter().map(|t| t.app.clone()).collect();
+    listed.sort();
+    known.sort();
+    Ok(listed != known)
+}
+
 struct Apartment(bool);
 
 impl Drop for Apartment {
@@ -368,10 +382,12 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
     let mut relist = true;
     let mut last_relist: Option<Instant> = None;
     let mut relist_pending = false;
+    let mut checked = Instant::now();
 
     let outcome = loop {
         let mut dirty: Vec<u32> = Vec::new();
         let mut commands = Vec::new();
+        let mut woken = true;
         {
             let mut inbox = shared.inbox.lock().unwrap();
             loop {
@@ -381,20 +397,22 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
                 if inbox.relist || !inbox.dirty.is_empty() || !inbox.commands.is_empty() || relist {
                     break;
                 }
+                let check_at = checked + LIST_CHECK_INTERVAL;
+                if check_at <= Instant::now() {
+                    woken = false;
+                    break;
+                }
                 let mut due = sessions.iter().filter_map(|t| t.retry_at).min();
                 if relist_pending {
                     let at = last_relist.map_or_else(Instant::now, |t| t + RELIST_INTERVAL);
                     due = Some(due.map_or(at, |d| d.min(at)));
                 }
-                if let Some(due) = due {
-                    let wait_for = due.saturating_duration_since(Instant::now());
-                    if wait_for.is_zero() {
-                        break;
-                    }
-                    inbox = shared.inbox_ready.wait_timeout(inbox, wait_for).unwrap().0;
-                } else {
-                    inbox = shared.inbox_ready.wait(inbox).unwrap();
+                let due = due.map_or(check_at, |d| d.min(check_at));
+                let wait_for = due.saturating_duration_since(Instant::now());
+                if wait_for.is_zero() {
+                    break;
                 }
+                inbox = shared.inbox_ready.wait_timeout(inbox, wait_for).unwrap().0;
             }
             if inbox.stop {
                 break Ok(());
@@ -402,6 +420,17 @@ pub fn run(shared: &Arc<Shared>) -> Result<()> {
             relist |= std::mem::take(&mut inbox.relist);
             dirty.append(&mut inbox.dirty);
             commands.extend(inbox.commands.drain(..));
+        }
+        if checked.elapsed() >= LIST_CHECK_INTERVAL {
+            checked = Instant::now();
+            match list_changed(&manager, &sessions) {
+                Ok(changed) => relist |= changed,
+                Err(error) if error.code() == E_ABORT => break Err(error),
+                Err(_) => relist_pending = true,
+            }
+            if !woken && !relist && !relist_pending && sessions.iter().all(|t| t.retry_at.is_none()) {
+                continue;
+            }
         }
         // A listing asked for by the system runs at once. One asked for because a call failed waits its turn, so a
         // session that keeps failing cannot spin this thread.
