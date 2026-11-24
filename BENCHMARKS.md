@@ -108,7 +108,7 @@ The first sample is taken at minute 0, before the JVM has warmed up. From minute
 50. Java heap and threads stayed flat, so any growth is outside the Java heap.
 
 Longer and faster runs, 2026-11-23, with a fixed and pre-touched 48 MiB heap so that heap pages do not count as growth.
-All of them **FAILED** the check above, which compares with the sample at minute 0; what happens after the start:
+The Windows and Linux runs **FAILED** the check above, which compares with the sample at minute 0; what happens after the start:
 
 | Run | Code | Result |
 |---|---|---|
@@ -116,6 +116,7 @@ All of them **FAILED** the check above, which compares with the sample at minute
 | Ubuntu in WSL, 3 hours, a track every 5 s | before the review fixes | Resident memory 113.8 to 133.1 MiB until minute 45, then 133.1 to 133.7 MiB until minute 175. |
 | Windows Server 2025 runner, 15 minutes, about 9 tracks a second | with the review fixes | Private memory 130.8 to 129.4 MiB from minute 4 to 14, over 5,276 tracks with covers; without covers 125.5 to 125.5 MiB. |
 | Ubuntu runner, 15 minutes, about 9 tracks a second | with the review fixes | Resident memory 137.0 to 137.1 MiB from minute 5 to 14 with covers; without covers 136.1 to 136.2 MiB. |
+| M2 Mac, macOS 26.5, 3 hours, a track every 5 s | with the review fixes | Passed the check. Physical footprint 108 to 113 MB from minute 15 to 170; the memory the JVM tracks itself +1 MB. |
 | M2 Mac, macOS 26.5, 1 hour, a track every 5 s, default heap | before the review fixes | Passed the check. Resident memory 122.8 to 129.2 MiB from minute 10 to 55. Idle CPU 0.111%, over the 0.1% target. |
 
 So there was no growth per track change in the code with the fixes: the growth of the long Windows run, about 5 KB per
@@ -158,6 +159,11 @@ playing and 1.6 ms after a seek, lyric lines 524 ms off, track changes median 3.
   result was still 10 of 14.
 - Shuffle: the helper stream never carried shuffle or repeat state, so both stay unknown. The commands themselves work.
 - Withdrawn controls: the stream sent nothing when the player disabled a control.
+- Lost play and pause changes: the change latency scenario, which flips the state as soon as the last flip is seen
+  (about every 4 ms), failed in 78 of 480 runs on that Mac, between 12% and 22% for every variant of the library
+  tried, old and new. A trace of a failing run showed that the helper never sent the missing change and that the
+  library was waiting for it. The shown state then stays wrong until the next change arrives. Slower flips were not
+  tried. A run of the whole harness therefore passes 9 or 10 of 14.
 
 ## Real players
 

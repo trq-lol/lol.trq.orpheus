@@ -182,9 +182,9 @@ they report cannot be trusted: browsers label everything as music.
 - A live harness publishes generated tracks through each system's real media session interface and checks what the
   library sees, every control round trip, filtering, a crashing player, source switching, lyrics timing and
   start/stop leaks. See [docs/harness.md](docs/harness.md) and the numbers in [BENCHMARKS.md](BENCHMARKS.md).
-  All 14 scenarios pass on Windows and Linux. On macOS 10 of 14 pass: position and
+  All 14 scenarios pass on Windows and Linux. On macOS 9 or 10 of 14 pass: position and
   lyrics can be about half a second off right after a track starts, and shuffle state and withdrawn controls are
-  not seen.
+  not seen, and a play or pause change that follows another within milliseconds can be missed.
 - The long resource runs did not pass their check on Windows and Linux: memory grew more than allowed after the
   start. Fast runs showed no growth per track change. Idle CPU was over the target on Linux and macOS. See
   "Long runs" in [BENCHMARKS.md](BENCHMARKS.md).
