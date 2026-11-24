@@ -101,12 +101,13 @@ final class Scenarios {
     private Probe start(Orpheus orpheus) throws InterruptedException {
         Probe probe = new Probe(orpheus);
         orpheus.start();
-        long ready = probe.awaitThat(() -> probe.status().state() != SourceStatus.State.STARTING, 15_000);
-        if (ready < 0 || probe.status().state() != SourceStatus.State.READY) {
-            String reason = probe.status().reason();
+        String id = rig.source().id();
+        long ready = probe.awaitThat(() -> probe.status(id).state() != SourceStatus.State.STARTING, 15_000);
+        if (ready < 0 || probe.status(id).state() != SourceStatus.State.READY) {
+            String reason = probe.status(id).reason();
             probe.close();
             throw new Skip("source not available: "
-                    + (reason.isEmpty() ? probe.status().state() : reason));
+                    + (reason.isEmpty() ? probe.status(id).state() : reason));
         }
         return probe;
     }

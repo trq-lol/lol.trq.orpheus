@@ -2,6 +2,8 @@
 package lol.trq.orpheus.harness;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Predicate;
 import lol.trq.orpheus.Orpheus;
@@ -17,14 +19,14 @@ final class Probe implements AutoCloseable {
     final List<OrpheusEvent> events = new CopyOnWriteArrayList<>();
     private final Subscription subscription;
     private final Object lock = new Object();
-    private volatile SourceStatus status = SourceStatus.STARTING;
+    private final Map<String, SourceStatus> statuses = new ConcurrentHashMap<>();
 
     Probe(Orpheus orpheus) {
         this.orpheus = orpheus;
         this.subscription = orpheus.listen(event -> {
             events.add(event);
             if (event instanceof SourceStatusChanged changed) {
-                status = changed.status();
+                statuses.put(changed.sourceId(), changed.status());
             }
             synchronized (lock) {
                 lock.notifyAll();
@@ -32,8 +34,8 @@ final class Probe implements AutoCloseable {
         });
     }
 
-    SourceStatus status() {
-        return status;
+    SourceStatus status(String sourceId) {
+        return statuses.getOrDefault(sourceId, SourceStatus.STARTING);
     }
 
     /**
