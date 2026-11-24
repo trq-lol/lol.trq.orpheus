@@ -6,7 +6,7 @@ Measured on 2026-11-23 with an i7-12700K, Windows 10 and Java 25 unless noted.
 
 | Target | Windows | Linux | macOS |
 |---|---|---|---|
-| Live scenarios | 14 of 14 | 14 of 14 | 9 or 10 of 14 |
+| Live scenarios | 14 of 14 | 14 of 14 | 12 of 14 |
 | Change visible within 250 ms | 1.4 ms | 2.4 ms | 5.2 ms, changes sometimes lost |
 | Control round trip within 300 ms | 4.2 ms | 7.2 ms | not measured |
 | Position error under 100 ms | 0.7 ms | 1.4 ms | **532 ms** after a track starts |
@@ -51,9 +51,15 @@ A run fails if its last sample exceeds the first by more than 2 threads or handl
 | macOS, 3 hours | passed | +4.6 MiB, minute 15 to 170 |
 | Windows, 15 minutes, 9 tracks/s | failed: handles +40, threads +3 | -1.4 MiB, minute 4 to 14 |
 | Linux, 15 minutes, 9 tracks/s | failed: resident +24.4 MiB | +0.2 MiB, minute 5 to 14 |
+| Windows, 1 hour, 2026-11-24 | failed: handles +49, resident +21.3 MiB | heap +10.8 MiB: cover cache filling |
+| Windows, 3 hours, 2026-11-24 | failed: handles +16 | private +8.6 MiB, minute 15 to 165 |
 
-The fast runs show no growth per track. Slow growth over time on Windows is not ruled out. The fast runs and the
-3-hour macOS run used newer code than the others. The 3-hour and fast runs used a fixed 48 MiB heap.
+The fast runs show no growth per track. The fast runs and the 3-hour macOS run used newer code than the other undated
+ones. The 3-hour, fast and dated runs used a fixed 48 MiB heap.
+
+On Windows, private memory grows 2 to 7 MiB per hour in the soak; a plain JVM does not grow. Over 90 minutes the native
+memory in use stayed within 0.8 MiB while the memory held by the allocator grew 3 to 4 MiB per hour. In a 3-hour run of
+the library alone the held memory was level for the last 55 minutes. Handles and threads were flat after start.
 
 ## macOS
 
@@ -61,9 +67,7 @@ The fast runs show no growth per track. Slow growth over time on Windows is not 
 |---|---|
 | `progress` | Updates within about 0.5 s of the previous one arrive 510 to 620 ms late with a late timestamp |
 | `lyrics` | Probably the same |
-| `controls` | The helper does not report shuffle or repeat |
-| `unsupported_controls` | The helper does not report which controls are enabled |
-| `change_latency` (78 of 480 runs) | The helper drops a play or pause change when two come about 4 ms apart |
+| `change_latency` (78 of 480 runs, helper 0.8.0) | The helper drops a play or pause change when two come about 4 ms apart |
 
 ## Real players
 
@@ -75,10 +79,11 @@ Windows 10, by hand.
 | Chrome 157, incognito | yes | placeholder title | generic icon |
 | Firefox 160 | yes | title, artist | yes |
 | Edge 158 | yes | title, artist | no |
+| Spotify | yes | title, artist, album | not checked |
 | VLC 3.0.20 | no session | | |
 
-Play, pause, seek, next and previous worked in every browser. Spotify, TIDAL, Apple Music and Windows Media Player are
-untested, as is every real player on Linux. On macOS, QuickTime published nothing in the one attempt made.
+Play, pause, seek, next and previous worked in every browser. Spotify was only read, not controlled. TIDAL, Apple Music
+and Windows Media Player are untested, as is every real player on Linux. On macOS, QuickTime published nothing in the one attempt made.
 
 ## Running
 

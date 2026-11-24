@@ -1,7 +1,7 @@
 # Spotify
 
 `orpheus-spotify` reads and controls what a Spotify account plays, on any device, through the Spotify Web API.
-Experimental. It needs an access token from you; the library never signs in.
+Experimental and not yet tested against a real account. It needs an access token from you; the library never signs in.
 
 ```java
 TokenSource tokens = () -> session.accessToken(); // null while signed out
@@ -49,5 +49,5 @@ limit commercial use, lyric and video synchronization, and apps in development m
 
 ## Other services
 
-Only services with an official API for the current playback can be a source. TIDAL, SoundCloud and Apple Music have
-none, so use the system session.
+A source needs an official API for the current playback. None was found for TIDAL, SoundCloud or Apple Music, so use
+the system session.

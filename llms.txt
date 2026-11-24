@@ -2,12 +2,13 @@
 
 > A general-purpose Java 17 music library: what is playing, playback controls, cover colours and synced lyrics, from
 > Windows media sessions, Linux MPRIS, macOS Now Playing (experimental) and data pushed in by the program. No
-> dependencies, no network, MIT.
+> dependencies, MIT. Only the optional Spotify module uses the network.
 
 ## Docs
 
 - [README](https://github.com/trq-lol/lol.trq.orpheus/blob/main/README.md): requirements, artifacts, usage, privacy, limitations
 - [Platforms](https://github.com/trq-lol/lol.trq.orpheus/blob/main/docs/platforms.md): what each system provides, app ids, limits, transforming the jars
+- [Spotify](https://github.com/trq-lol/lol.trq.orpheus/blob/main/docs/spotify.md): the optional Web API source, scopes, request rates
 - [Harness](https://github.com/trq-lol/lol.trq.orpheus/blob/main/docs/harness.md): the live checks and how to run them
 - [Benchmarks](https://github.com/trq-lol/lol.trq.orpheus/blob/main/BENCHMARKS.md): JMH numbers and measured targets
 - [CLAUDE.md](https://github.com/trq-lol/lol.trq.orpheus/blob/main/CLAUDE.md): mental model, patterns that matter, traps
