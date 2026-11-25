@@ -5,6 +5,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-24
+
 ### Fixed
 
 - macOS: an update that the system delivers late no longer sets the position back by half a second.

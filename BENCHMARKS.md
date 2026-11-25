@@ -75,6 +75,7 @@ to the JIT compiler; single steps did not follow the number of compilations in a
 | Failing scenario | Cause |
 |---|---|
 | `progress` (529 to 534 ms off) | macOS delivers an update about 530 ms late when it follows another within 400 ms, with the late time as its timestamp. A seek in such an update looks like a real one. |
+| `lyrics`, on the hosted runner only (53.7 ms off, limit 50) | Not known |
 | `change_latency` (78 of 480 runs, helper 0.8.0) | The helper drops a play or pause change when two come about 4 ms apart |
 
 ## Real players
