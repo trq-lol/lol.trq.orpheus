@@ -21,6 +21,16 @@ interface Publisher extends AutoCloseable {
     /** Turns next, previous, fast-forward and rewind on or off. */
     void controls(boolean all) throws Exception;
 
+    /** Whether {@link #hold} works. */
+    default boolean canHold() {
+        return false;
+    }
+
+    /** While on, changes are kept back; off publishes them as one update. */
+    default void hold(boolean on) throws Exception {
+        throw new UnsupportedOperationException("hold");
+    }
+
     /** Waits for the next command the player receives, or returns null after the timeout. */
     String awaitCommand(long timeoutMillis) throws InterruptedException;
 

@@ -22,10 +22,13 @@ final class ProcessPublisher implements Publisher {
     private final List<String> all = new CopyOnWriteArrayList<>();
     private final String rule;
     private final List<String> supported;
+    private final boolean holds;
 
-    ProcessPublisher(Path executable, String rule, List<String> supported) throws IOException, InterruptedException {
+    ProcessPublisher(Path executable, String rule, List<String> supported, boolean holds)
+            throws IOException, InterruptedException {
         this.rule = rule;
         this.supported = supported;
+        this.holds = holds;
         process = new ProcessBuilder(executable.toString())
                 .redirectError(ProcessBuilder.Redirect.INHERIT)
                 .start();
@@ -92,6 +95,19 @@ final class ProcessPublisher implements Publisher {
     @Override
     public void state(String state) throws Exception {
         send("state", state);
+    }
+
+    @Override
+    public boolean canHold() {
+        return holds;
+    }
+
+    @Override
+    public void hold(boolean on) throws Exception {
+        if (!holds) {
+            throw new UnsupportedOperationException("hold");
+        }
+        send("hold", on ? "on" : "off");
     }
 
     @Override

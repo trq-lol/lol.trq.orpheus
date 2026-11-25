@@ -8,6 +8,7 @@
 //   state <playing|paused|stopped>
 //   position <ms>
 //   controls <on|off>      (off disables next and previous)
+//   hold <on|off>          (on keeps changes back, off publishes them in one set, like a player would)
 //   quit
 // stdout: "ready", then "done <verb>" after each script line and "command <name> [value]" for each command.
 
@@ -22,6 +23,7 @@ static void say(NSString *line) {
 
 static NSMutableDictionary *info;
 static BOOL playing = NO;
+static BOOL held = NO;
 
 // The position at anchorTime, so that every update carries the real current position.
 static double anchorPosition = 0;
@@ -43,6 +45,9 @@ static void setPosition(double seconds) {
 static void publish(void) {
     info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(currentPosition());
     info[MPNowPlayingInfoPropertyPlaybackRate] = @(playing ? 1.0 : 0.0);
+    if (held) {
+        return;
+    }
     [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = info;
 }
 
@@ -110,6 +115,11 @@ static void handle(NSString *line) {
         BOOL all = [field(1) isEqualToString:@"on"];
         commands.nextTrackCommand.enabled = all;
         commands.previousTrackCommand.enabled = all;
+    } else if ([verb isEqualToString:@"hold"]) {
+        held = [field(1) isEqualToString:@"on"];
+        if (!held) {
+            publish();
+        }
     } else if ([verb isEqualToString:@"quit"]) {
         exit(0);
     }
@@ -118,6 +128,10 @@ static void handle(NSString *line) {
 
 int main(void) {
     @autoreleasepool {
+        // Without this the process never checks in as an application, NSRunningApplication does not know it and
+        // mediaremote-adapter's stream drops its updates.
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
         info = [NSMutableDictionary dictionary];
         MPRemoteCommandCenter *commands = [MPRemoteCommandCenter sharedCommandCenter];
         [commands.playCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {

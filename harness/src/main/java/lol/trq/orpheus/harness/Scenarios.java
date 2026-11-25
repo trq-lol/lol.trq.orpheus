@@ -60,6 +60,7 @@ final class Scenarios {
         all.put("change_latency", this::changeLatency);
         all.put("cover", this::cover);
         all.put("progress", this::progress);
+        all.put("progress_single", this::progressSingle);
         all.put("controls", this::controls);
         all.put("unsupported_controls", this::unsupportedControls);
         all.put("rapid_changes", this::rapidChanges);
@@ -206,11 +207,30 @@ final class Scenarios {
     }
 
     private void progress(Map<String, Object> numbers) throws Exception {
+        progress(numbers, false);
+    }
+
+    /** {@code progress}, with the track, state and position published as one update, as a real player does. */
+    private void progressSingle(Map<String, Object> numbers) throws Exception {
+        if (!publisher.canHold()) {
+            throw new Skip("the publisher cannot publish several changes as one update");
+        }
+        progress(numbers, true);
+    }
+
+    private void progress(Map<String, Object> numbers, boolean single) throws Exception {
         try (Probe probe = start(builder().build())) {
+            if (single) {
+                publisher.hold(true);
+            }
             publisher.track(TITLE, ARTIST, "", 180_000, null, false);
             publisher.state("playing");
             long before = System.nanoTime();
             publisher.position(30_000);
+            if (single) {
+                before = System.nanoTime();
+                publisher.hold(false);
+            }
             long set = before + (System.nanoTime() - before) / 2;
             check(
                     probe.await(
