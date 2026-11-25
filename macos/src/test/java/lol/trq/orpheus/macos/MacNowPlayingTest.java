@@ -269,4 +269,59 @@ class MacNowPlayingTest {
         state.put("bundleIdentifier", "org.example.player");
         assertEquals("org.example.player", session(state).app().id(), "a bundle identifier wins");
     }
+
+    private static SessionUpdate at(Map<String, Object> state, long elapsedMillis, long stampMillis) {
+        state.put("elapsedTimeMicros", elapsedMillis * 1000.0);
+        state.put("timestampEpochMicros", stampMillis * 1000.0);
+        return MacNowPlaying.session(state, new MacNowPlaying.CoverCache(), 5_000_000_000L, 1_000_002_000L);
+    }
+
+    private static final long HELD = 1_000_000_000L;
+
+    @Test
+    void aHeldBackCopyKeepsTheHeldAnchor() {
+        Map<String, Object> state = new HashMap<>();
+        MacNowPlaying.apply(PLAYING, state);
+        for (long gap : new long[] {100, 250, 400}) {
+            SessionUpdate held = at(state, 10_000, HELD);
+            SessionUpdate late = at(state, 10_000 + gap, HELD + gap + 530);
+            SessionUpdate kept = MacNowPlaying.steady(held, late);
+            assertEquals(held.positionMillis(), kept.positionMillis(), "gap " + gap);
+            assertEquals(held.measuredNanos(), kept.measuredNanos(), "gap " + gap);
+        }
+    }
+
+    @Test
+    void otherShortfallsAreTaken() {
+        Map<String, Object> state = new HashMap<>();
+        MacNowPlaying.apply(PLAYING, state);
+        SessionUpdate held = at(state, 10_000, HELD);
+        SessionUpdate audioStartedLate = at(state, 10_230, HELD + 530);
+        assertSame(audioStartedLate, MacNowPlaying.steady(held, audioStartedLate), "a shortfall of 300 ms is taken");
+        SessionUpdate seekBack = at(state, 9_830, HELD + 530);
+        assertSame(seekBack, MacNowPlaying.steady(held, seekBack), "a shortfall of 700 ms is taken");
+        SessionUpdate tooLate = at(state, 10_000 + 1_100 - 530, HELD + 1_100);
+        assertSame(tooLate, MacNowPlaying.steady(held, tooLate), "an anchor gap over 1050 ms is taken");
+    }
+
+    @Test
+    void aHeldBackCopyAfterAPauseRateOrTrackChangeIsTaken() {
+        Map<String, Object> state = new HashMap<>();
+        MacNowPlaying.apply(PLAYING, state);
+        SessionUpdate held = at(state, 10_000, HELD);
+        state.put("playing", false);
+        SessionUpdate paused = at(state, 10_000, HELD + 530);
+        assertSame(paused, MacNowPlaying.steady(held, paused));
+        assertSame(held, MacNowPlaying.steady(paused, held), "nothing is kept from a paused anchor");
+        state.put("playing", true);
+        state.put("playbackRate", 2.0);
+        SessionUpdate faster = at(state, 10_000, HELD + 530);
+        assertSame(faster, MacNowPlaying.steady(held, faster));
+        state.put("playbackRate", 1.0);
+        state.put("title", "Another Song");
+        SessionUpdate other = at(state, 10_000, HELD + 530);
+        assertSame(other, MacNowPlaying.steady(held, other));
+        assertNull(MacNowPlaying.steady(held, null));
+        assertSame(held, MacNowPlaying.steady(null, held));
+    }
 }

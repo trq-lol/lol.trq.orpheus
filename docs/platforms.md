@@ -47,7 +47,9 @@ macOS has no public API for this. The library runs
 
 - Any macOS update can break it. The source then reports `UNAVAILABLE`.
 - Only the app macOS picked is visible, and commands go to it.
-- Position and lyrics can be half a second off right after a track starts.
+- Position and lyrics can be half a second off after two updates within 400 ms, at any playback rate but the normal one or
+  when the second one is a seek.
+- A player that never registers as an application (some command-line players) is not seen.
 - A play or pause change within milliseconds of another can be missed until the next change.
 - The helper has to be built on a Mac with `native/macos/build-adapter.sh`. `MacNowPlaying.create(Path)` uses your own
   build.

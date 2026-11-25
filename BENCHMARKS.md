@@ -6,12 +6,12 @@ Measured on 2026-11-23 with an i7-12700K, Windows 10 and Java 25 unless noted.
 
 | Target | Windows | Linux | macOS |
 |---|---|---|---|
-| Live scenarios | 14 of 14 | 14 of 14 | 12 of 14 |
+| Live scenarios | 14 of 14 | 14 of 14 | 14 of 15, M2, macOS 26.5, 3 of 3 runs |
 | Change visible within 250 ms | 1.4 ms | 2.4 ms | 5.2 ms, changes sometimes lost |
 | Control round trip within 300 ms | 4.2 ms | 7.2 ms | not measured |
-| Position error under 100 ms | 0.7 ms | 1.4 ms | **532 ms** after a track starts |
+| Position error under 100 ms | 0.7 ms | 1.4 ms | 1.0 to 1.7 ms; **529 to 534 ms** after updates within 400 ms of each other |
 | Position error after a seek under 100 ms | 0.3 ms | 1.4 ms | 1.6 ms |
-| Lyric line change within 50 ms | 0.3 ms | 0.4 ms | **524 ms** |
+| Lyric line change within 50 ms | 0.3 ms | 0.4 ms | 0.3 ms |
 | Idle CPU under 0.1% of a core | 0.01% | **0.144%** | **0.111%** |
 | 100 start/stop cycles without growth | met | met | met |
 | Soak without growth | **missed** | **missed** | met |
@@ -74,8 +74,7 @@ to the JIT compiler; single steps did not follow the number of compilations in a
 
 | Failing scenario | Cause |
 |---|---|
-| `progress` | Updates within about 0.5 s of the previous one arrive 510 to 620 ms late with a late timestamp |
-| `lyrics` | Probably the same |
+| `progress` (529 to 534 ms off) | macOS delivers an update about 530 ms late when it follows another within 400 ms, with the late time as its timestamp. A seek in such an update looks like a real one. |
 | `change_latency` (78 of 480 runs, helper 0.8.0) | The helper drops a play or pause change when two come about 4 ms apart |
 
 ## Real players

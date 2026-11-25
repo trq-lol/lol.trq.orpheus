@@ -80,6 +80,7 @@ public final class MacNowPlaying implements Source, Transport {
     private boolean stopping;
     private volatile String sessionId = "";
     private long namedPid;
+    private SessionUpdate held;
     private int nameAttempts;
     private long nextNameAt;
     private String processName = "";
@@ -456,9 +457,56 @@ public final class MacNowPlaying implements Source, Transport {
                 state.put(PROCESS_NAME, processName);
             }
         }
-        SessionUpdate update = session(state, cover, System.nanoTime(), System.currentTimeMillis());
+        SessionUpdate update = steady(held, session(state, cover, System.nanoTime(), System.currentTimeMillis()));
+        held = update;
         sessionId = update == null ? "" : update.sessionId();
         return update == null ? List.of() : List.of(update);
+    }
+
+    // macOS holds back a nowPlayingInfo set that follows another within about 400 ms by about 530 ms, then stamps it
+    // with its arrival time and the elapsed time of the set.
+    /** Least shortfall against the held anchor that is taken for a held-back copy. */
+    static final long LATE_MIN_MILLIS = 490;
+    /** Largest shortfall against the held anchor that is taken for a held-back copy. */
+    static final long LATE_MAX_MILLIS = 630;
+    /** Least time from the held anchor to a held-back copy. */
+    static final long LATE_MIN_GAP_NANOS = 500_000_000L;
+    /** Largest time from the held anchor to a held-back copy. */
+    static final long LATE_MAX_GAP_NANOS = 1_050_000_000L;
+
+    /** Keeps the held anchor when the next update is a held-back copy of the same position. */
+    static SessionUpdate steady(SessionUpdate held, SessionUpdate next) {
+        if (held == null
+                || next == null
+                || !held.sessionId().equals(next.sessionId())
+                || !held.track().equals(next.track())
+                || held.state() != PlaybackState.PLAYING
+                || next.state() != PlaybackState.PLAYING
+                || held.rate() != next.rate()) {
+            return next;
+        }
+        long gap = next.measuredNanos() - held.measuredNanos();
+        if (gap < LATE_MIN_GAP_NANOS || gap > LATE_MAX_GAP_NANOS) {
+            return next;
+        }
+        double behind = held.positionMillis() + gap / 1e6 * held.rate() - next.positionMillis();
+        if (behind < LATE_MIN_MILLIS || behind > LATE_MAX_MILLIS) {
+            return next;
+        }
+        return new SessionUpdate(
+                next.sessionId(),
+                next.app(),
+                next.track(),
+                next.state(),
+                held.positionMillis(),
+                held.measuredNanos(),
+                next.rate(),
+                next.shuffle(),
+                next.repeat(),
+                next.volume(),
+                next.controls(),
+                next.cover(),
+                next.coverUri());
     }
 
     static SessionUpdate session(Map<String, Object> state, CoverCache cover, long nanoTime, long wallMillis) {
