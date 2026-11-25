@@ -5,6 +5,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+### Added
+
+- `BpmProvider` and `Snapshot.bpm()`.
+
 ## [0.2.0] - 2026-11-24
 
 ### Fixed

@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -277,6 +279,53 @@ class OrpheusTest {
             await(found);
             orpheus.stop();
         }
+    }
+
+    @Test
+    void bpmBelongsToThePlayingTrackAndBadAnswersAreIgnored() throws Exception {
+        PushSource push = PushSource.create("mine");
+        Map<String, CompletableFuture<Float>> answers = new ConcurrentHashMap<>();
+        for (String title : List.of("One", "Two", "Three", "Four")) {
+            answers.put(title, new CompletableFuture<>());
+        }
+        CountDownLatch asked = new CountDownLatch(1);
+        BpmProvider provider = track -> {
+            if (track.title().equals("Throws")) {
+                throw new IllegalStateException("no");
+            }
+            if (track.title().equals("One")) {
+                asked.countDown();
+            }
+            return answers.get(track.title());
+        };
+        orpheus = Orpheus.builder().source(push).bpm(provider).build();
+        orpheus.start();
+        showNext(push, "One");
+        await(asked);
+        showNext(push, "Two");
+        assertTrue(answers.get("One").complete(90f));
+        assertTrue(answers.get("Two").complete(120f));
+        for (int i = 0; i < 100 && orpheus.snapshot().bpm() != 120f; i++) {
+            Thread.sleep(20);
+        }
+        assertEquals(120f, orpheus.snapshot().bpm(), "the late answer for the first track must be dropped");
+        showNext(push, "Three");
+        assertEquals(0f, orpheus.snapshot().bpm(), "a new track starts without a tempo");
+        assertTrue(answers.get("Three").complete(Float.NaN));
+        showNext(push, "Throws");
+        showNext(push, "Four");
+        assertTrue(answers.get("Four").complete(1e9f));
+        Thread.sleep(200);
+        assertEquals(0f, orpheus.snapshot().bpm());
+    }
+
+    private void showNext(PushSource push, String title) throws Exception {
+        CountDownLatch shown = when(
+                orpheus,
+                e -> e instanceof PlaybackChanged
+                        && e.snapshot().playback().track().title().equals(title));
+        push.publish(PlaybackUpdate.playing(Track.of(title, "Me")));
+        await(shown);
     }
 
     @Test

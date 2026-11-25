@@ -56,6 +56,9 @@ public final class Engine {
         /** Look up off-thread, then call {@link Engine#lyricsFound}. */
         void findLyrics(long generation, Track track);
 
+        /** Look up off-thread, then call {@link Engine#bpmFound}. */
+        default void findBpm(long generation, Track track) {}
+
         /** Call {@link Engine#refresh} at or after this {@code nanoTime}. */
         void wakeAt(long nanos);
     }
@@ -101,6 +104,7 @@ public final class Engine {
     private long lyricsDuration;
     private int lyricsLookups;
     private long lyricsGeneration;
+    private long bpmGeneration;
     private List<SessionInfo> infos = List.of();
 
     public Engine(
@@ -187,7 +191,7 @@ public final class Engine {
             offsets.remove(offsets.keySet().iterator().next());
         }
         if (snapshot.lyrics() != Lyrics.NONE && snapshot.lyrics().offsetMillis() != millis) {
-            publish(new Snapshot(playback, snapshot.lyrics().withOffset(millis), snapshot.cover()));
+            publish(new Snapshot(playback, snapshot.lyrics().withOffset(millis), snapshot.cover(), snapshot.bpm()));
             host.emit(new LyricsChanged(snapshot));
         }
     }
@@ -201,7 +205,7 @@ public final class Engine {
             failedCover = cover == null ? key : null;
         }
         if (cover != null && key.equals(snapshot.playback().coverKey()) && snapshot.cover() == null) {
-            publish(new Snapshot(snapshot.playback(), snapshot.lyrics(), cover));
+            publish(new Snapshot(snapshot.playback(), snapshot.lyrics(), cover, snapshot.bpm()));
             host.emit(new CoverReady(snapshot));
         }
     }
@@ -212,8 +216,14 @@ public final class Engine {
         }
         Long offset = offsets.get(songKey(snapshot.playback().track()));
         Lyrics shown = offset == null ? lyrics : lyrics.withOffset(offset);
-        publish(new Snapshot(snapshot.playback(), shown, snapshot.cover()));
+        publish(new Snapshot(snapshot.playback(), shown, snapshot.cover(), snapshot.bpm()));
         host.emit(new LyricsChanged(snapshot));
+    }
+
+    public void bpmFound(long generation, float bpm) {
+        if (generation == bpmGeneration && bpm >= 20 && bpm <= 400) {
+            publish(new Snapshot(snapshot.playback(), snapshot.lyrics(), snapshot.cover(), bpm));
+        }
     }
 
     /** Looks for lyrics again when the playing track has none, after a provider learned something new. */
@@ -540,7 +550,7 @@ public final class Engine {
             cover = snapshot.cover();
         }
         boolean coverArrived = cover != null && snapshot.cover() != cover;
-        publish(new Snapshot(playback, lyrics, cover));
+        publish(new Snapshot(playback, lyrics, cover, trackChanged ? 0 : snapshot.bpm()));
 
         if (cover == null
                 && wantedCover != null
@@ -562,6 +572,10 @@ public final class Engine {
             }
         }
         if (trackChanged) {
+            bpmGeneration++;
+            if (playback.isPresent() && !playback.track().isEmpty()) {
+                host.findBpm(bpmGeneration, playback.track());
+            }
             host.emit(new TrackChanged(snapshot));
         }
         if (lyricsDropped) {

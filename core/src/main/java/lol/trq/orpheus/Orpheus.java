@@ -61,6 +61,7 @@ public final class Orpheus implements AutoCloseable {
 
     private final List<Source> sources;
     private final List<LyricsProvider> providers;
+    private final BpmProvider bpm;
     private final Executor userExecutor;
     private final Consumer<String> debug;
     private final int coverSize;
@@ -83,6 +84,7 @@ public final class Orpheus implements AutoCloseable {
     private Orpheus(Builder builder) {
         this.sources = List.copyOf(builder.sources);
         this.providers = List.copyOf(builder.providers);
+        this.bpm = builder.bpm;
         this.userExecutor = builder.executor;
         this.debug = builder.debug;
         this.coverSize = builder.coverSize;
@@ -344,6 +346,7 @@ public final class Orpheus implements AutoCloseable {
         private long dropped;
         private final AtomicReference<Runnable> nextCover = new AtomicReference<>();
         private final AtomicReference<Runnable> nextLyrics = new AtomicReference<>();
+        private final AtomicReference<Runnable> nextBpm = new AtomicReference<>();
         volatile boolean ended;
         private boolean begun;
         private ScheduledFuture<?> wake;
@@ -770,6 +773,27 @@ public final class Orpheus implements AutoCloseable {
         }
 
         @Override
+        public void findBpm(long generation, Track track) {
+            if (bpm == null) {
+                return;
+            }
+            submitLatest(nextBpm, () -> {
+                try {
+                    CompletableFuture<Float> answer = bpm.find(track);
+                    if (answer != null) {
+                        answer.whenComplete((value, failure) -> {
+                            if (value != null) {
+                                submit(hub, () -> engine.bpmFound(generation, value));
+                            }
+                        });
+                    }
+                } catch (RuntimeException e) {
+                    debug("bpm provider failed: " + e);
+                }
+            });
+        }
+
+        @Override
         public void wakeAt(long nanos) {
             if (ended) {
                 return;
@@ -807,6 +831,7 @@ public final class Orpheus implements AutoCloseable {
         private final List<Source> sources = new ArrayList<>();
         private final List<LyricsProvider> providers = new ArrayList<>();
         private final Set<String> shareable = new HashSet<>();
+        private BpmProvider bpm;
         private AppRules rules = AppRules.defaults();
         private Executor executor;
         private Consumer<String> debug;
@@ -828,6 +853,12 @@ public final class Orpheus implements AutoCloseable {
         /** Adds a lyrics provider. Providers are asked in order until one gives a confident match. */
         public Builder lyrics(LyricsProvider provider) {
             providers.add(provider);
+            return this;
+        }
+
+        /** Sets where {@link Snapshot#bpm()} comes from. Default: nowhere. */
+        public Builder bpm(BpmProvider provider) {
+            bpm = provider;
             return this;
         }
 

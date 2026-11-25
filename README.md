@@ -109,6 +109,8 @@ if (line >= 0) {
 }
 ```
 
+For a tempo, give the builder your own `BpmProvider` and read `snapshot.bpm()`. None is included.
+
 `LocalLyrics` reads `.lrc` files and lyrics embedded in MP3, FLAC and MP4. Only confident matches are shown. There is
 no online provider; implement `LyricsProvider` to add one.
 
