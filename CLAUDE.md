@@ -32,7 +32,9 @@ sources ──► SourceSink ──► Engine (one thread) ──► volatile Sn
 - Merging is by `Track.sameSong`, only across different sources, and ends the moment the songs differ.
 - Windows: one Rust worker thread owns all WinRT objects; Java blocks in a native `await` and gets byte blobs
   (`Blob`). Native code never calls into Java. The class and method are bound through a system property handshake.
-- Linux: `Bus` has one reader thread; `MprisSource` does everything else on its single worker thread.
+- Linux: `Bus` has one reader thread; `MprisSource` does everything else on its single worker thread. `NativeMpris`
+  uses the Windows bridge design (`NativeBridge`, `NativeBlob`, ABI 1) over `native/orpheus-linux` (zbus, blocking):
+  one worker owns the players, reader threads post signals, helper threads make calls that could hang.
 - macOS: one long-lived child process streams JSON lines; commands are short-lived child processes.
 
 ## Pitfalls to avoid

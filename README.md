@@ -48,7 +48,7 @@ dependencies {
 | `orpheus-core` | Everything except the system sources. Pure Java. |
 | `orpheus-system` | Picks the source for the running system. Pulls in the three below. |
 | `orpheus-windows` | Windows media sessions |
-| `orpheus-linux` | MPRIS |
+| `orpheus-linux` | MPRIS, in pure Java or through a bundled library (`NativeMpris`) |
 | `orpheus-macos` | macOS Now Playing |
 | `orpheus-spotify` | [Spotify Web API](docs/spotify.md), opt-in |
 
@@ -155,7 +155,7 @@ picker. Sources reporting the same song are merged.
 ## Building
 
 ```sh
-./gradlew spotlessCheck build   # cargo builds the native library on Windows
+./gradlew spotlessCheck build   # cargo builds the native library on Windows and Linux
 ./gradlew :core:jmh
 ```
 

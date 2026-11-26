@@ -3,7 +3,6 @@ package lol.trq.orpheus.system;
 
 import java.util.Locale;
 import lol.trq.orpheus.DisplayRules;
-import lol.trq.orpheus.linux.MprisSource;
 import lol.trq.orpheus.macos.MacNowPlaying;
 import lol.trq.orpheus.source.Source;
 import lol.trq.orpheus.source.SourceSink;
@@ -11,9 +10,9 @@ import lol.trq.orpheus.source.SourceStatus;
 import lol.trq.orpheus.windows.WindowsSessions;
 
 /**
- * The media sessions of whatever operating system the program runs on: Windows media sessions, MPRIS on Linux,
- * Now Playing on macOS (experimental). Its id is always {@code system}, so code that pins or shares by source id is
- * the same everywhere. On any other system it reports itself unavailable.
+ * The media sessions of whatever operating system the program runs on: Windows media sessions, MPRIS on Linux (through
+ * the bundled library, or pure Java where it cannot load), Now Playing on macOS (experimental). Its id is always
+ * {@code system}, so code that pins or shares by source id is the same everywhere. On any other system it reports itself unavailable.
  */
 public final class SystemSessions implements Source {
     private final Source delegate;
@@ -34,7 +33,7 @@ public final class SystemSessions implements Source {
             return new SystemSessions(WindowsSessions.create(), null);
         }
         if (os.startsWith("linux")) {
-            return new SystemSessions(MprisSource.create(), null);
+            return new SystemSessions(new LinuxSessions(), null);
         }
         if (os.startsWith("mac")) {
             return new SystemSessions(MacNowPlaying.create(), null);

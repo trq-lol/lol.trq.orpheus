@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["orpheus-windows", "publisher-windows"]
+members = ["orpheus-linux", "orpheus-windows", "publisher-windows"]
 
 [workspace.package]
 version = "0.1.0"

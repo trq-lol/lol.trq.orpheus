@@ -5,6 +5,17 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+### Added
+
+- `NativeMpris`: Linux MPRIS through a bundled Rust library (x64), with the same sessions, ids and controls as
+  `MprisSource`. It needs no system library but the C library. `SystemSessions` uses it on Linux and falls back to
+  `MprisSource` when it cannot load.
+
+### Changed
+
+- Readable application names: Windows shows `Spotify Music` for a packaged app, not its app user model id, and a
+  Linux player without an MPRIS identity is shown as its capitalized bus name.
+
 ## [0.3.0] - 2026-11-24
 
 ### Added

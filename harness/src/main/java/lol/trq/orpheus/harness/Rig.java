@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import lol.trq.orpheus.linux.MprisSource;
+import lol.trq.orpheus.linux.NativeMpris;
 import lol.trq.orpheus.macos.MacNowPlaying;
 import lol.trq.orpheus.source.Source;
 import lol.trq.orpheus.windows.WindowsSessions;
@@ -72,15 +73,16 @@ abstract class Rig {
             };
         }
         if (os.startsWith("linux")) {
+            boolean useNative = "native".equals(System.getenv("ORPHEUS_HARNESS_SOURCE"));
             return new Rig() {
                 @Override
                 String name() {
-                    return "linux";
+                    return useNative ? "linux-native" : "linux";
                 }
 
                 @Override
                 Source source() {
-                    return MprisSource.create();
+                    return useNative ? NativeMpris.create() : MprisSource.create();
                 }
 
                 @Override

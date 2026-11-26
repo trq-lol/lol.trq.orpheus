@@ -1,0 +1,15 @@
+[package]
+name = "orpheus-linux"
+description = "Linux MPRIS bridge for lol.trq.orpheus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "orpheus"
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+jni-sys = "0.4.1"
+zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }

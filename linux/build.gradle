@@ -1,5 +1,56 @@
-// Linux: media players on the session bus (MPRIS) over a small D-Bus client. Pure Java.
+// Linux: media players on the session bus (MPRIS). MprisSource is a small D-Bus client in pure Java; NativeMpris
+// does the same through a Rust library bundled in the jar.
+//
+// The library is built by cargo when the build runs on Linux. Elsewhere, or with -Porpheus.natives=<dir> (a
+// directory holding linux-x64/liborpheus.so), a prebuilt copy is packaged instead. Without either the jar is built
+// with no native code and NativeMpris reports itself unavailable at run time.
+
+import java.security.MessageDigest
 
 dependencies {
     api project(':core')
 }
+
+def abi = 1
+def nativeRoot = rootProject.layout.projectDirectory.dir('native')
+def prebuilt = providers.gradleProperty('orpheus.natives')
+def onLinux = System.getProperty('os.name').toLowerCase().startsWith('linux')
+def target = 'x86_64-unknown-linux-gnu'
+
+def cargoBuild = tasks.register('cargoBuild', Exec) {
+    enabled = onLinux && !prebuilt.isPresent()
+    workingDir = nativeRoot.asFile
+    commandLine 'cargo', 'build', '--release', '--locked', '-p', 'orpheus-linux', '--target', target
+    inputs.dir(nativeRoot.dir('orpheus-linux'))
+    inputs.files(nativeRoot.file('Cargo.toml'), nativeRoot.file('Cargo.lock'))
+    outputs.file(nativeRoot.file("target/${target}/release/liborpheus.so"))
+}
+
+def nativeResources = tasks.register('nativeResources') {
+    dependsOn cargoBuild
+    def library = prebuilt.isPresent()
+            ? file("${prebuilt.get()}/linux-x64/liborpheus.so")
+            : nativeRoot.file("target/${target}/release/liborpheus.so").asFile
+    def output = layout.buildDirectory.dir('native-resources')
+    inputs.files(library).optional()
+    outputs.dir(output)
+    doLast {
+        def directory = output.get().dir("orpheus-native/${abi}/linux-x64").asFile
+        delete(output)
+        if (library.exists()) {
+            directory.mkdirs()
+            def copy = new File(directory, 'liborpheus.so')
+            copy.bytes = library.bytes
+            def digest = MessageDigest.getInstance('SHA-256').digest(copy.bytes).encodeHex().toString()
+            new File(directory, 'index').text = "${digest} liborpheus.so\n"
+        } else {
+            output.get().asFile.mkdirs()
+            if (project.hasProperty('orpheus.natives')) {
+                throw new GradleException('orpheus-linux is being built without its native library')
+            }
+            logger.warn('orpheus-linux is being built without its native library')
+        }
+    }
+}
+
+sourceSets.main.resources.srcDir(nativeResources)
