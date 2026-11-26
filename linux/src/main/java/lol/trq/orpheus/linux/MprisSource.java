@@ -31,6 +31,7 @@ import lol.trq.orpheus.Shuffle;
 import lol.trq.orpheus.SourceApp;
 import lol.trq.orpheus.Track;
 import lol.trq.orpheus.cover.CoverDecoder;
+import lol.trq.orpheus.internal.AppNames;
 import lol.trq.orpheus.internal.Backoff;
 import lol.trq.orpheus.internal.Text;
 import lol.trq.orpheus.linux.dbus.Bus;
@@ -603,7 +604,7 @@ public final class MprisSource implements Source, Transport {
         }
         return new SessionUpdate(
                 player.name,
-                new SourceApp(appId, player.identity.isEmpty() ? appId : player.identity),
+                new SourceApp(appId, player.identity.isEmpty() ? AppNames.humanize(appId) : player.identity),
                 track,
                 state,
                 player.positionMicros / 1000,

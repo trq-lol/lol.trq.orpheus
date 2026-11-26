@@ -20,6 +20,7 @@ import lol.trq.orpheus.Repeat;
 import lol.trq.orpheus.Shuffle;
 import lol.trq.orpheus.SourceApp;
 import lol.trq.orpheus.Track;
+import lol.trq.orpheus.internal.AppNames;
 import lol.trq.orpheus.internal.Backoff;
 import lol.trq.orpheus.source.ControlRequest;
 import lol.trq.orpheus.source.CoverData;
@@ -197,12 +198,9 @@ public final class WindowsSessions implements Source, Transport {
                         controls.add(CONTROLS[bit]);
                     }
                 }
-                String name = s.app().toLowerCase(java.util.Locale.ROOT).endsWith(".exe")
-                        ? s.app().substring(0, s.app().length() - 4)
-                        : s.app();
                 updates.add(new SessionUpdate(
                         Integer.toString(s.id()),
-                        new SourceApp(s.app(), name),
+                        new SourceApp(s.app(), AppNames.windows(s.app())),
                         new Track(
                                 null,
                                 s.title(),
