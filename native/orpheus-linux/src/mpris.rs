@@ -27,6 +27,8 @@ const POSITION_INTERVAL: Duration = Duration::from_secs(5);
 /// Java gives up on a command after this long; running it later would surprise the user.
 const COMMAND_LIFETIME: Duration = Duration::from_secs(5);
 const MAX_PLAYERS: usize = 64;
+/// How often a property read that a newer signal overtook is asked again before it is used anyway.
+const MAX_RETRIES: u32 = 4;
 const MAX_TEXT_BYTES: usize = 4096;
 const MAX_LIST: usize = 64;
 
@@ -50,7 +52,7 @@ pub enum Event {
     Lost,
     Names(Vec<String>),
     Identity { name: String, generation: u64, identity: String },
-    All { name: String, generation: u64, version: u64, properties: HashMap<String, OwnedValue> },
+    All { name: String, generation: u64, version: u64, retries: u32, properties: HashMap<String, OwnedValue> },
     Position { name: String, generation: u64, version: u64, micros: i64, at: Instant },
 }
 
@@ -398,11 +400,11 @@ impl Worker<'_> {
                     self.dirty = true;
                 }
             }
-            Event::All { name, generation, version, properties } => {
+            Event::All { name, generation, version, retries, properties } => {
                 if let Some(player) = self.find(&name, generation) {
-                    if player.version != version {
+                    if player.version != version && retries < MAX_RETRIES {
                         let current = player.version;
-                        self.load_all(name, generation, current);
+                        self.load_all(name, generation, current, retries + 1);
                         return;
                     }
                     player.merge(&properties);
@@ -491,13 +493,13 @@ impl Worker<'_> {
             let identity = all.get("Identity").and_then(|v| text(v))?;
             Some(Event::Identity { name: n, generation, identity })
         });
-        self.load_all(name, generation, 0);
+        self.load_all(name, generation, 0, 0);
     }
 
-    fn load_all(&self, name: String, generation: u64, version: u64) {
+    fn load_all(&self, name: String, generation: u64, version: u64, retries: u32) {
         self.later(move |c| {
             let properties = get_all(c, &name, PLAYER)?;
-            Some(Event::All { name, generation, version, properties })
+            Some(Event::All { name, generation, version, retries, properties })
         });
     }
 
@@ -587,7 +589,7 @@ impl Worker<'_> {
             player.merge(&changed);
             let (generation, version) = (player.generation, player.version);
             if !invalidated.is_empty() {
-                self.load_all(name, generation, version);
+                self.load_all(name, generation, version, 0);
             } else if moved {
                 self.read_position(&name);
             }

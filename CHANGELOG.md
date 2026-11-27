@@ -5,6 +5,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+### Fixed
+
+- Linux: a player that changed right after it was found could show its previous track or state until its next change.
+  Property reads that a newer signal overtook are now asked again, in both `MprisSource` and `NativeMpris`.
+
 ## [0.4.0] - 2026-11-26
 
 ### Added

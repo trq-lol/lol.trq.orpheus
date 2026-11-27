@@ -66,6 +66,9 @@ public final class MprisSource implements Source, Transport {
     private static final long CALL_TIMEOUT_MILLIS = 3000;
     private static final long POSITION_INTERVAL_MILLIS = 5000;
     private static final int MAX_PLAYERS = 64;
+    /** How often a property read that a newer signal overtook is asked again before it is used anyway. */
+    private static final int MAX_RETRIES = 4;
+
     private static final List<String> METADATA = List.of(
             "mpris:trackid",
             "mpris:length",
@@ -99,6 +102,9 @@ public final class MprisSource implements Source, Transport {
         final Map<Object, Object> properties = new HashMap<>();
         long positionMicros;
         long positionNanos = System.nanoTime();
+        /** Counts signals, so a reply asked for before the latest signal is not applied over it. */
+        long version;
+
         String artUrl;
         CoverData art;
 
@@ -348,9 +354,14 @@ public final class MprisSource implements Source, Transport {
         players.put(name, player);
         call(Message.call(DBUS, DBUS_PATH, DBUS, "GetNameOwner", "s", name))
                 .thenAccept(reply -> run(() -> {
+                    if (players.get(name) != player) {
+                        return;
+                    }
                     if (reply != null && reply.type() == Message.RETURN) {
                         player.owner = reply.text();
                     }
+                    // read only now: signals sent before the owner was known could not be matched to this player
+                    loadAll(player);
                 }));
         call(Message.call(name, OBJECT, PROPERTIES, "GetAll", "s", ROOT))
                 .thenAccept(reply -> run(() -> {
@@ -359,13 +370,21 @@ public final class MprisSource implements Source, Transport {
                         publish();
                     }
                 }));
-        loadAll(player);
     }
 
     private void loadAll(Player player) {
+        loadAll(player, 0);
+    }
+
+    private void loadAll(Player player, int retries) {
+        long version = player.version;
         call(Message.call(player.name, OBJECT, PROPERTIES, "GetAll", "s", PLAYER))
                 .thenAccept(reply -> run(() -> {
                     if (players.get(player.name) != player) {
+                        return;
+                    }
+                    if (player.version != version && retries < MAX_RETRIES) {
+                        loadAll(player, retries + 1);
                         return;
                     }
                     Map<?, ?> all = properties(reply);
@@ -472,10 +491,14 @@ public final class MprisSource implements Source, Transport {
     }
 
     private void readPosition(Player player) {
+        long version = player.version;
         long asked = System.nanoTime();
         call(Message.call(player.name, OBJECT, PROPERTIES, "Get", "ss", PLAYER, "Position"))
                 .thenAccept(reply -> run(() -> {
-                    if (players.get(player.name) != player || reply == null || reply.type() != Message.RETURN) {
+                    if (players.get(player.name) != player
+                            || player.version != version
+                            || reply == null
+                            || reply.type() != Message.RETURN) {
                         return;
                     }
                     if (!reply.body().isEmpty() && reply.body().get(0) instanceof Long micros) {
@@ -528,6 +551,7 @@ public final class MprisSource implements Source, Transport {
         if (player == null) {
             return;
         }
+        player.version++;
         if (message.member().equals("Seeked") && !body.isEmpty() && body.get(0) instanceof Long micros) {
             position(player, micros);
             publish();
