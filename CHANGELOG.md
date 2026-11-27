@@ -5,6 +5,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-27
+
 ### Fixed
 
 - Linux: a player that changed right after it was found could show its previous track or state until its next change.
