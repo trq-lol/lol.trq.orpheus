@@ -12,12 +12,15 @@ Measured on 2026-11-23 with an i7-12700K, Windows 10 and Java 25 unless noted.
 | Position error under 100 ms | 0.7 ms | 1.4 ms | 1.0 to 1.7 ms; **529 to 534 ms** after updates within 400 ms of each other |
 | Position error after a seek under 100 ms | 0.3 ms | 1.4 ms | 1.6 ms |
 | Lyric line change within 50 ms | 0.3 ms | 0.4 ms | 0.3 ms |
-| Idle CPU under 0.1% of a core | 0.01% | **0.144%** | **0.111%** |
+| Idle CPU under 0.1% of a core | 0.01% | 0.013%, native 0.007% | **0.111%** |
 | 100 start/stop cycles without growth | met | met | met |
 | Soak without growth | **missed** | **missed** | met |
 
 Bold means missed. Values are the worst of one run with a test player; real players add their own delay.
 Linux is Ubuntu 24.04 under WSL 2 with Java 21. macOS is 26.5 on an M2.
+Linux idle CPU (2026-11-27) counts only the threads of the library and its native code, as `libraryCpuPercentOfOneCore`
+in the soak summary; the whole idle JVM used 0.19% to 0.21%, nearly all of it the compiler and collector. macOS is still
+the whole process.
 
 ## Code paths
 

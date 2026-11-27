@@ -2,6 +2,8 @@
 package lol.trq.orpheus.harness;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,10 +12,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /** Resource numbers of this process as the operating system sees them: threads, handles, memory, CPU time. */
 final class ProcessStats {
+    /** Threads of the library, its native code and the D-Bus runtime the native code uses. */
+    private static final Pattern LIBRARY_THREAD = Pattern.compile("orpheus|zbus|async-io|blocking");
+
     private ProcessStats() {}
 
     static Map<String, Object> sample() {
@@ -31,6 +37,7 @@ final class ProcessStats {
                         .totalCpuDuration()
                         .map(d -> d.toMillis())
                         .orElse(-1L));
+        out.put("libraryCpuMillis", libraryCpuMillis());
         out.put(
                 "heapUsedBytes",
                 Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory());
@@ -47,6 +54,44 @@ final class ProcessStats {
             out.put("osError", e.toString());
         }
         return out;
+    }
+
+    /**
+     * CPU time of the library's own threads, so the JVM's background work (compiler, collector) is not counted.
+     * On Linux every thread is read from the system, which also counts the native library's threads; elsewhere only
+     * Java threads are seen.
+     */
+    private static long libraryCpuMillis() {
+        if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("linux")) {
+            try (Stream<Path> tasks = Files.list(Path.of("/proc/self/task"))) {
+                long ticks = 0;
+                for (Path task : (Iterable<Path>) tasks::iterator) {
+                    try {
+                        String name = Files.readString(task.resolve("comm")).trim();
+                        if (!LIBRARY_THREAD.matcher(name).lookingAt()) {
+                            continue;
+                        }
+                        String stat = Files.readString(task.resolve("stat"));
+                        String[] fields =
+                                stat.substring(stat.lastIndexOf(')') + 2).split(" ");
+                        ticks += Long.parseLong(fields[11]) + Long.parseLong(fields[12]);
+                    } catch (IOException | RuntimeException e) {
+                        // the thread ended while it was read
+                    }
+                }
+                return ticks * 10;
+            } catch (IOException e) {
+                return -1;
+            }
+        }
+        ThreadMXBean threads = ManagementFactory.getThreadMXBean();
+        long nanos = 0;
+        for (Thread thread : Thread.getAllStackTraces().keySet()) {
+            if (thread.getName().startsWith("orpheus-")) {
+                nanos += Math.max(0, threads.getThreadCpuTime(thread.getId()));
+            }
+        }
+        return nanos / 1_000_000;
     }
 
     private static void windows(Map<String, Object> out) throws IOException {

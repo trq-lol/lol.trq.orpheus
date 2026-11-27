@@ -63,6 +63,7 @@ final class Soak {
             Map<String, Object> first = null;
             Map<String, Object> last = null;
             long cpuAtStart = -1;
+            long libraryCpuAtStart = -1;
             long startedAt = System.nanoTime();
             while (System.nanoTime() < end) {
                 long now = System.nanoTime();
@@ -75,6 +76,7 @@ final class Soak {
                     if (first == null) {
                         first = last;
                         cpuAtStart = ((Number) last.get("cpuMillis")).longValue();
+                        libraryCpuAtStart = ((Number) last.get("libraryCpuMillis")).longValue();
                     }
                     System.out.println(Json.write(last));
                     if (((Number) last.get("minute")).doubleValue() >= warmup) {
@@ -126,6 +128,10 @@ final class Soak {
                 double wall =
                         ((Number) last.get("minute")).doubleValue() - ((Number) first.get("minute")).doubleValue();
                 summary.put("cpuPercentOfOneCore", wall <= 0 ? -1 : Math.round(cpu / (wall * 600.0) * 1000) / 1000.0);
+                long library = ((Number) last.get("libraryCpuMillis")).longValue() - libraryCpuAtStart;
+                summary.put(
+                        "libraryCpuPercentOfOneCore",
+                        wall <= 0 || libraryCpuAtStart < 0 ? -1 : Math.round(library / (wall * 600.0) * 1000) / 1000.0);
             }
             if (judged.size() < 2) {
                 summary.put("note", "too short to judge growth");
