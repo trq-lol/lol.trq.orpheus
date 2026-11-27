@@ -49,10 +49,9 @@ pub enum Event {
     Signal(Message),
     Lost,
     Names(Vec<String>),
-    Owner { name: String, generation: u64, owner: String },
     Identity { name: String, generation: u64, identity: String },
-    All { name: String, generation: u64, properties: HashMap<String, OwnedValue> },
-    Position { name: String, generation: u64, micros: i64, at: Instant },
+    All { name: String, generation: u64, version: u64, properties: HashMap<String, OwnedValue> },
+    Position { name: String, generation: u64, version: u64, micros: i64, at: Instant },
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -71,6 +70,8 @@ struct Metadata {
 struct Player {
     id: u32,
     generation: u64,
+    /// Counts signals, so a reply asked for before the latest signal is not applied over it.
+    version: u64,
     owner: String,
     identity: String,
     loaded: bool,
@@ -345,7 +346,7 @@ impl Worker<'_> {
         let names: Vec<String> = reply.body().deserialize().map_err(|e| format!("bad name list: {e}"))?;
         self.shared.publish(wire::status(true, ""));
         for name in names {
-            self.add(name);
+            self.add(name, None);
         }
         let mut next_refresh = Instant::now() + POSITION_INTERVAL;
         loop {
@@ -387,14 +388,9 @@ impl Worker<'_> {
             Event::Lost => {}
             Event::Names(names) => {
                 for name in names {
-                    self.add(name);
+                    self.add(name, None);
                 }
                 self.dirty = true;
-            }
-            Event::Owner { name, generation, owner } => {
-                if let Some(player) = self.find(&name, generation) {
-                    player.owner = owner;
-                }
             }
             Event::Identity { name, generation, identity } => {
                 if let Some(player) = self.find(&name, generation) {
@@ -402,8 +398,13 @@ impl Worker<'_> {
                     self.dirty = true;
                 }
             }
-            Event::All { name, generation, properties } => {
+            Event::All { name, generation, version, properties } => {
                 if let Some(player) = self.find(&name, generation) {
+                    if player.version != version {
+                        let current = player.version;
+                        self.load_all(name, generation, current);
+                        return;
+                    }
                     player.merge(&properties);
                     if let Some(micros) = properties.get("Position").and_then(|v| number(v)) {
                         player.anchor(micros as i64);
@@ -411,8 +412,10 @@ impl Worker<'_> {
                     self.dirty = true;
                 }
             }
-            Event::Position { name, generation, micros, at } => {
-                if let Some(player) = self.find(&name, generation) {
+            Event::Position { name, generation, version, micros, at } => {
+                if let Some(player) = self.find(&name, generation)
+                    && player.version == version
+                {
                     player.position_micros = micros;
                     player.position_at = at;
                     self.dirty = true;
@@ -432,7 +435,7 @@ impl Worker<'_> {
         });
     }
 
-    fn add(&mut self, name: String) {
+    fn add(&mut self, name: String, owner: Option<String>) {
         if !name.starts_with(PREFIX)
             || name == format!("{PREFIX}playerctld")
             || self.players.iter().any(|(n, _)| *n == name)
@@ -440,6 +443,17 @@ impl Worker<'_> {
         {
             return;
         }
+        // the bus daemon answers this itself, so it cannot hang on a frozen player
+        let owner = owner.or_else(|| {
+            let reply = self
+                .connection
+                .call_method(Some(DBUS), DBUS_PATH, Some(DBUS), "GetNameOwner", &(name.as_str()))
+                .ok()?;
+            reply.body().deserialize::<String>().ok()
+        });
+        let Some(owner) = owner.filter(|o| !o.is_empty()) else {
+            return;
+        };
         let generation = self.next_generation;
         self.next_generation += 1;
         let id = self.next_id;
@@ -449,7 +463,8 @@ impl Worker<'_> {
             Player {
                 id,
                 generation,
-                owner: String::new(),
+                version: 0,
+                owner,
                 identity: String::new(),
                 loaded: false,
                 status: String::new(),
@@ -472,28 +487,24 @@ impl Worker<'_> {
         ));
         let n = name.clone();
         self.later(move |c| {
-            let reply = c.call_method(Some(DBUS), DBUS_PATH, Some(DBUS), "GetNameOwner", &(n.as_str())).ok()?;
-            let owner: String = reply.body().deserialize().ok()?;
-            Some(Event::Owner { name: n, generation, owner })
-        });
-        let n = name.clone();
-        self.later(move |c| {
             let all = get_all(c, &n, ROOT)?;
             let identity = all.get("Identity").and_then(|v| text(v))?;
             Some(Event::Identity { name: n, generation, identity })
         });
-        self.load_all(name, generation);
+        self.load_all(name, generation, 0);
     }
 
-    fn load_all(&self, name: String, generation: u64) {
+    fn load_all(&self, name: String, generation: u64, version: u64) {
         self.later(move |c| {
             let properties = get_all(c, &name, PLAYER)?;
-            Some(Event::All { name, generation, properties })
+            Some(Event::All { name, generation, version, properties })
         });
     }
 
     fn read_position(&self, name: &str) {
-        let Some(generation) = self.players.iter().find(|(n, _)| n == name).map(|(_, p)| p.generation) else {
+        let Some((generation, version)) =
+            self.players.iter().find(|(n, _)| n == name).map(|(_, p)| (p.generation, p.version))
+        else {
             return;
         };
         let name = name.to_string();
@@ -504,7 +515,7 @@ impl Worker<'_> {
             let answered = Instant::now();
             let value: OwnedValue = reply.body().deserialize().ok()?;
             let micros = number(&value)? as i64;
-            Some(Event::Position { name, generation, micros, at: asked + (answered - asked) / 2 })
+            Some(Event::Position { name, generation, version, micros, at: asked + (answered - asked) / 2 })
         });
     }
 
@@ -543,7 +554,7 @@ impl Worker<'_> {
                 }
             } else {
                 self.dirty |= self.players.len() != before;
-                self.add(name);
+                self.add(name, Some(new_owner));
             }
             return;
         }
@@ -552,6 +563,7 @@ impl Worker<'_> {
         };
         let (name, player) = &mut self.players[index];
         let name = name.clone();
+        player.version += 1;
         if member == "Seeked" {
             if let Ok(micros) = message.body().deserialize::<i64>() {
                 player.anchor(micros);
@@ -573,9 +585,9 @@ impl Worker<'_> {
                 player.anchor(now);
             }
             player.merge(&changed);
-            let generation = player.generation;
+            let (generation, version) = (player.generation, player.version);
             if !invalidated.is_empty() {
-                self.load_all(name, generation);
+                self.load_all(name, generation, version);
             } else if moved {
                 self.read_position(&name);
             }
