@@ -5,6 +5,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-26
+
 ### Added
 
 - `NativeMpris`: Linux MPRIS through a bundled Rust library (x64), with the same sessions, ids and controls as
